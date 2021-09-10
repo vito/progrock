@@ -527,12 +527,14 @@ func (disp *display) print(d displayInfo, width, height int, all bool) {
 		if j.showTerm {
 			term := j.vertex.term
 			term.Resize(termHeight, width-termPad)
-			for _, l := range term.Content {
-				if !isEmpty(l) {
-					out := aec.Apply(fmt.Sprintf(" => => # %s\n", string(l)), aec.Faint)
-					fmt.Fprint(disp.c, out)
-					lineCount++
+			used := term.UsedHeight()
+			for row, l := range term.Content {
+				if row+1 > used {
+					break
 				}
+				out := fmt.Sprintf(" => => # %s\n", string(l))
+				fmt.Fprint(disp.c, out)
+				lineCount++
 			}
 			j.vertex.termCount++
 			j.showTerm = false
