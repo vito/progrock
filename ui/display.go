@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -90,7 +89,7 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 	}
 }
 
-const termHeight = 6
+const termHeight = 24
 const termPad = 10
 
 type displayInfo struct {
@@ -424,19 +423,15 @@ func (disp *display) getSize() (int, int) {
 func setupTerminals(jobs []*job, height int, all bool) []*job {
 	var candidates []*job
 	numInUse := 0
-	for _, j := range jobs {
-		if j.vertex != nil && j.vertex.termBytes > 0 && j.completedTime == nil {
+	for i := len(jobs) - 1; i >= 0; i-- {
+		j := jobs[i]
+		if j.vertex != nil && j.vertex.termBytes > 0 {
 			candidates = append(candidates, j)
 		}
 		if j.completedTime == nil {
 			numInUse++
 		}
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		idxI := candidates[i].vertex.termBytes + candidates[i].vertex.termCount*50
-		idxJ := candidates[j].vertex.termBytes + candidates[j].vertex.termCount*50
-		return idxI > idxJ
-	})
 
 	numFree := height - 2 - numInUse
 	numToHide := 0
