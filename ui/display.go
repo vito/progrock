@@ -532,7 +532,7 @@ func (disp *display) print(d displayInfo, width, height int, all bool) {
 				if row+1 > used {
 					break
 				}
-				out := fmt.Sprintf(" => => # %s\n", string(l))
+				out := fmt.Sprintf(" => | %s\n", string(l))
 				fmt.Fprint(disp.c, out)
 				lineCount++
 			}
