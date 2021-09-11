@@ -21,7 +21,6 @@ import (
 )
 
 func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w io.Writer, ch chan *graph.SolveStatus) error {
-
 	modeConsole := c != nil
 
 	disp := &display{c: c, phase: phase}
@@ -49,8 +48,10 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 
 	displayLimiter := rate.NewLimiter(rate.Every(displayTimeout), 1)
 
-	var height int
-	width, _ := disp.getSize()
+	width, height := disp.getSize()
+
+	termHeight := height / 2
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -58,7 +59,7 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 		case <-ticker.C:
 		case ss, ok := <-ch:
 			if ok {
-				t.update(ss, width)
+				t.update(ss, termHeight, width)
 			} else {
 				done = true
 			}
@@ -67,13 +68,13 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 		if modeConsole {
 			width, height = disp.getSize()
 			if done {
-				disp.print(t.displayInfo(), width, height, true)
+				disp.print(t.displayInfo(), termHeight, width, height, true)
 				t.printErrorLogs(c)
 				return nil
 			} else if displayLimiter.Allow() {
 				ticker.Stop()
 				ticker = time.NewTicker(tickerTimeout)
-				disp.print(t.displayInfo(), width, height, false)
+				disp.print(t.displayInfo(), termHeight, width, height, false)
 			}
 		} else {
 			if done || displayLimiter.Allow() {
@@ -89,7 +90,6 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 	}
 }
 
-const termHeight = 24
 const termPad = 10
 
 type displayInfo struct {
@@ -207,7 +207,7 @@ func (t *trace) triggerVertexEvent(v *graph.Vertex) {
 	t.byDigest[v.Digest].prev = v
 }
 
-func (t *trace) update(s *graph.SolveStatus, termWidth int) {
+func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 	for _, v := range s.Vertexes {
 		prev, ok := t.byDigest[v.Digest]
 		if !ok {
@@ -420,7 +420,7 @@ func (disp *display) getSize() (int, int) {
 	return width, height
 }
 
-func setupTerminals(jobs []*job, height int, all bool) []*job {
+func setupTerminals(jobs []*job, termHeight, height int, all bool) []*job {
 	var candidates []*job
 	numInUse := 0
 	for i := len(jobs) - 1; i >= 0; i-- {
@@ -450,9 +450,9 @@ func setupTerminals(jobs []*job, height int, all bool) []*job {
 	return jobs
 }
 
-func (disp *display) print(d displayInfo, width, height int, all bool) {
+func (disp *display) print(d displayInfo, termHeight, width, height int, all bool) {
 	// this output is inspired by Buck
-	d.jobs = setupTerminals(d.jobs, height, all)
+	d.jobs = setupTerminals(d.jobs, termHeight, height, all)
 	b := aec.EmptyBuilder
 	for i := 0; i <= disp.lineCount; i++ {
 		b = b.Up(1)
