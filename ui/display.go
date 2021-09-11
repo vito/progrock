@@ -525,15 +525,7 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 		if j.showTerm {
 			term := j.vertex.term
 			term.Resize(termHeight, width-termPad)
-			used := term.UsedHeight()
-			for row, l := range term.Content {
-				if row+1 > used {
-					break
-				}
-				out := fmt.Sprintf(" => | %s\n", string(l))
-				fmt.Fprint(disp.c, out)
-				lineCount++
-			}
+			lineCount += renderTerm(disp.c, term)
 			j.vertex.termCount++
 			j.showTerm = false
 		}
@@ -548,13 +540,91 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	disp.lineCount = lineCount
 }
 
-func isEmpty(l []rune) bool {
-	for _, r := range l {
-		if r != ' ' {
-			return false
+func renderTerm(w io.Writer, term *vt100.VT100) int {
+	used := term.UsedHeight()
+
+	lineCount := 0
+	for row, l := range term.Content {
+		if row+1 > used {
+			break
 		}
+
+		var lastFormat vt100.Format
+		fmt.Fprint(w, "    | ")
+		for col, r := range l {
+			f := term.Format[row][col]
+
+			if f != lastFormat {
+				lastFormat = f
+				printFormat(w, f)
+			}
+
+			fmt.Fprint(w, string(r))
+		}
+
+		// reset to prevent leaking format into the line prefix
+		fmt.Fprintln(w, aec.Reset)
+
+		lineCount++
 	}
-	return true
+
+	return lineCount
+}
+
+func printFormat(w io.Writer, f vt100.Format) {
+	if f == (vt100.Format{}) {
+		fmt.Fprint(w, aec.Reset)
+		return
+	}
+
+	b := aec.EmptyBuilder
+
+	switch f.Fg {
+	case vt100.Black:
+		b = b.BlackF()
+	case vt100.Red:
+		b = b.RedF()
+	case vt100.Green:
+		b = b.GreenF()
+	case vt100.Yellow:
+		b = b.YellowF()
+	case vt100.Blue:
+		b = b.BlueF()
+	case vt100.Magenta:
+		b = b.MagentaF()
+	case vt100.Cyan:
+		b = b.CyanF()
+	case vt100.White:
+		b = b.WhiteF()
+	}
+
+	switch f.Bg {
+	case vt100.Black:
+		b = b.BlackB()
+	case vt100.Red:
+		b = b.RedB()
+	case vt100.Green:
+		b = b.GreenB()
+	case vt100.Yellow:
+		b = b.YellowB()
+	case vt100.Blue:
+		b = b.BlueB()
+	case vt100.Magenta:
+		b = b.MagentaB()
+	case vt100.Cyan:
+		b = b.CyanB()
+	case vt100.White:
+		b = b.WhiteB()
+	}
+
+	switch f.Intensity {
+	case vt100.Bright:
+		b = b.Bold()
+	case vt100.Dim:
+		b = b.Faint()
+	}
+
+	fmt.Fprint(w, b.ANSI)
 }
 
 func align(l, r string, w int) string {
