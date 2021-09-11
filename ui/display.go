@@ -15,8 +15,8 @@ import (
 	"github.com/morikuni/aec"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/units"
-	"github.com/tonistiigi/vt100"
 	"github.com/vito/progrock/graph"
+	"github.com/vito/vt100"
 	"golang.org/x/time/rate"
 )
 
