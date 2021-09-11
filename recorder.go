@@ -11,7 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/graph"
-	progressui "github.com/vito/progrock/ui"
+	"github.com/vito/progrock/ui"
 )
 
 // Clock is used to determine the current time.
@@ -45,9 +45,9 @@ func (recorder *Recorder) Display(phase string, w io.Writer) error {
 		}
 	}
 
-	// don't get interrupted; trust recoder.Close above and exhaust the channel
+	// don't get interrupted; exhaust the channel
 	progCtx := context.Background()
-	return progressui.DisplaySolveStatus(progCtx, phase, c, os.Stderr, recorder.Source)
+	return ui.DisplaySolveStatus(progCtx, phase, c, os.Stderr, recorder.Source)
 }
 
 func (recorder *Recorder) Record(status *graph.SolveStatus) {
@@ -141,7 +141,8 @@ func (recorder *VertexRecorder) Complete() {
 	now := Clock.Now()
 
 	if recorder.Vertex.Completed == nil {
-		// could already be set if referenced by a downstream workload
+		// avoid marking tasks as completed twice; could have been idempotently
+		// created through a dependency
 		recorder.Vertex.Completed = &now
 	}
 
