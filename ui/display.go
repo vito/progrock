@@ -454,9 +454,7 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	// this output is inspired by Buck
 	d.jobs = setupTerminals(d.jobs, termHeight, height, all)
 	b := aec.EmptyBuilder
-	for i := 0; i <= disp.lineCount; i++ {
-		b = b.Up(1)
-	}
+	b = b.Up(uint(disp.lineCount) + 1)
 	if !disp.repeated {
 		b = b.Down(1)
 	}
