@@ -154,6 +154,14 @@ func (recorder *VertexRecorder) Error(err error) {
 	recorder.sync()
 }
 
+func (recorder *VertexRecorder) Done(err error) {
+	if err != nil {
+		recorder.Error(err)
+	}
+
+	recorder.Complete()
+}
+
 func (recorder *VertexRecorder) Cached() {
 	if recorder.Vertex.Completed != nil {
 		// referenced again by another workload
