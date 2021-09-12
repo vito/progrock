@@ -19,6 +19,8 @@ github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea h1:SXhTLE6pb6eld/
 github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea/go.mod h1:WPnis/6cRcDZSUvVmezrxJPkiO87ThFYsoUiMwWNDJk=
 github.com/vito/vt100 v0.0.0-20210911214101-b812fdc059ea h1:6pCXDeEdiRjOFq6T96V7VRuBKzz63SXnvS/+pYtUqhU=
 github.com/vito/vt100 v0.0.0-20210911214101-b812fdc059ea/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
+github.com/vito/vt100 v0.0.0-20210912004403-d61d7faf769e h1:6ceGlOqriSPotxm4AXr88yNsu/5T7nyMVsbPTA/dbLE=
+github.com/vito/vt100 v0.0.0-20210912004403-d61d7faf769e/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
 golang.org/x/sync v0.0.0-20210220032951-036812b2e83c h1:5KslGYwFpkhGh+Q16bwMP3cOontH8FOep7tGV86Y7SQ=
 golang.org/x/sync v0.0.0-20210220032951-036812b2e83c/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c h1:VwygUrnw9jn88c4u8GD3rZQbqrP/tgas88tPUbBxQrk=

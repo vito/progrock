@@ -8,7 +8,7 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/vito/vt100 v0.0.0-20210911214101-b812fdc059ea
+	github.com/vito/vt100 v0.0.0-20210912004403-d61d7faf769e
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 )
