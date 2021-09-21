@@ -69,6 +69,7 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 			width, height = disp.getSize()
 			if done {
 				disp.print(t.displayInfo(), termHeight, width, height, true)
+				t.printErrorLogs(c)
 				return nil
 			} else if displayLimiter.Allow() {
 				ticker.Stop()
@@ -79,6 +80,7 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 			if done || displayLimiter.Allow() {
 				printer.print(t)
 				if done {
+					t.printErrorLogs(w)
 					return nil
 				}
 				ticker.Stop()
@@ -286,6 +288,30 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 		v.logsPartial = !complete
 		t.updates[v.Digest] = struct{}{}
 		v.update(1)
+	}
+}
+
+func (t *trace) printErrorLogs(f io.Writer) {
+	for _, v := range t.vertexes {
+		if v.Error != "" && !strings.HasSuffix(v.Error, context.Canceled.Error()) {
+			fmt.Fprintln(f, "------")
+			fmt.Fprintf(f, " > %s:\n", v.Name)
+			// tty keeps original logs
+			for _, l := range v.logs {
+				f.Write(l)
+				fmt.Fprintln(f)
+			}
+			// printer keeps last logs buffer
+			if v.logsBuffer != nil {
+				for i := 0; i < v.logsBuffer.Len(); i++ {
+					if v.logsBuffer.Value != nil {
+						fmt.Fprintln(f, string(v.logsBuffer.Value.([]byte)))
+					}
+					v.logsBuffer = v.logsBuffer.Next()
+				}
+			}
+			fmt.Fprintln(f, "------")
+		}
 	}
 }
 
