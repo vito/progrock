@@ -4,58 +4,34 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
-	"github.com/containerd/console"
 	"github.com/jonboulle/clockwork"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/graph"
-	"github.com/vito/progrock/ui"
 )
 
 // Clock is used to determine the current time.
 var Clock = clockwork.NewRealClock()
 
-type Recorder struct {
-	Source chan *graph.SolveStatus
+type Writer interface {
+	WriteStatus(*graph.SolveStatus)
+	Close()
+}
 
-	dest     chan<- *graph.SolveStatus
+type Recorder struct {
+	w        Writer
 	vertexes map[digest.Digest]*VertexRecorder
 }
 
-func NewRecorder() *Recorder {
-	ch := make(chan *graph.SolveStatus)
-
+func NewRecorder(w Writer) *Recorder {
 	return &Recorder{
-		Source: ch,
-
-		dest:     ch,
+		w:        w,
 		vertexes: map[digest.Digest]*VertexRecorder{},
 	}
 }
 
-func (recorder *Recorder) Display(phase string, w io.Writer) error {
-	var c console.Console
-	if file, ok := w.(console.File); ok {
-		var err error
-		c, err = console.ConsoleFromFile(file)
-		if err != nil {
-			c = nil
-		}
-	}
-
-	// don't get interrupted; exhaust the channel
-	progCtx := context.Background()
-	return ui.DisplaySolveStatus(progCtx, phase, c, os.Stderr, recorder.Source)
-}
-
 func (recorder *Recorder) Record(status *graph.SolveStatus) {
-	if recorder.dest == nil {
-		// noop
-		return
-	}
-
 	for i, v := range status.Vertexes {
 		cp := *v
 		status.Vertexes[i] = &cp
@@ -66,11 +42,11 @@ func (recorder *Recorder) Record(status *graph.SolveStatus) {
 		status.Statuses[i] = &cp
 	}
 
-	recorder.dest <- status
+	recorder.w.WriteStatus(status)
 }
 
 func (recorder *Recorder) Close() {
-	close(recorder.dest)
+	recorder.w.Close()
 }
 
 type recorderKey struct{}
@@ -82,9 +58,7 @@ func RecorderToContext(ctx context.Context, recorder *Recorder) context.Context 
 func RecorderFromContext(ctx context.Context) *Recorder {
 	rec := ctx.Value(recorderKey{})
 	if rec == nil {
-		noop := NewRecorder()
-		noop.dest = nil
-		return noop // throwaway
+		return NewRecorder(Discard{})
 	}
 
 	return rec.(*Recorder)

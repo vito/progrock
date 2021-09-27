@@ -20,15 +20,34 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w io.Writer, ch chan *graph.SolveStatus) error {
+type Reader interface {
+	ReadStatus() (*graph.SolveStatus, bool)
+}
+
+func Display(phase string, w io.Writer, r Reader) error {
+	var c console.Console
+	if file, ok := w.(console.File); ok {
+		var err error
+		c, err = console.ConsoleFromFile(file)
+		if err != nil {
+			c = nil
+		}
+	}
+
+	// don't get interrupted; exhaust the channel
+	progCtx := context.Background()
+	return DisplaySolveStatus(progCtx, phase, c, os.Stderr, r)
+}
+
+func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w io.Writer, r Reader) error {
 	modeConsole := c != nil
+
+	if phase == "" {
+		phase = "Building"
+	}
 
 	disp := &display{c: c, phase: phase}
 	printer := &textMux{w: w}
-
-	if disp.phase == "" {
-		disp.phase = "Building"
-	}
 
 	t := newTrace(w, modeConsole)
 
@@ -51,6 +70,9 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 	width, height := disp.getSize()
 
 	termHeight := height / 2
+
+	ch := make(chan *graph.SolveStatus)
+	go proxy(ch, r)
 
 	for {
 		select {
@@ -665,4 +687,16 @@ func wrapHeight(j []*job, limit int) []*job {
 		}
 	}
 	return wrapped
+}
+
+func proxy(ch chan<- *graph.SolveStatus, r Reader) {
+	for {
+		status, ok := r.ReadStatus()
+		if !ok {
+			close(ch)
+			return
+		}
+
+		ch <- status
+	}
 }
