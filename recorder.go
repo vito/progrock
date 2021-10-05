@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
+	"github.com/containerd/console"
 	"github.com/jonboulle/clockwork"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/graph"
+	"github.com/vito/progrock/ui"
 )
 
 // Clock is used to determine the current time.
@@ -22,12 +25,22 @@ type Writer interface {
 type Recorder struct {
 	w        Writer
 	vertexes map[digest.Digest]*VertexRecorder
+
+	displaying    *sync.WaitGroup
+	displayCtx    context.Context
+	displayCancel func()
 }
 
 func NewRecorder(w Writer) *Recorder {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Recorder{
 		w:        w,
 		vertexes: map[digest.Digest]*VertexRecorder{},
+
+		displaying:    &sync.WaitGroup{},
+		displayCtx:    ctx,
+		displayCancel: cancel,
 	}
 }
 
@@ -45,8 +58,18 @@ func (recorder *Recorder) Record(status *graph.SolveStatus) {
 	recorder.w.WriteStatus(status)
 }
 
-func (recorder *Recorder) Close() {
+func (recorder *Recorder) Display(phase string, c console.Console, w io.Writer, r ui.Reader) {
+	recorder.displaying.Add(1)
+	go func() {
+		ui.DisplaySolveStatus(recorder.displayCtx, phase, c, w, r)
+		recorder.displaying.Done()
+	}()
+}
+
+func (recorder *Recorder) Stop() {
 	recorder.w.Close()
+	recorder.displayCancel()
+	recorder.displaying.Wait()
 }
 
 type recorderKey struct{}

@@ -1,20 +1,41 @@
 package progrock
 
-import "github.com/vito/progrock/graph"
+import (
+	"sync"
 
-func Pipe() (ChanReader, ChanWriter) {
+	"github.com/vito/progrock/graph"
+)
+
+func Pipe() (ChanReader, Writer) {
 	ch := make(chan *graph.SolveStatus)
-	return ch, ch
+	return ch, &ChanWriter{ch: ch}
 }
 
-type ChanWriter chan<- *graph.SolveStatus
+type ChanWriter struct {
+	ch chan<- *graph.SolveStatus
 
-func (ch ChanWriter) WriteStatus(status *graph.SolveStatus) {
-	ch <- status
+	sync.Mutex
 }
 
-func (ch ChanWriter) Close() {
-	close(ch)
+func (doc *ChanWriter) WriteStatus(v *graph.SolveStatus) {
+	doc.Lock()
+	defer doc.Unlock()
+
+	if doc.ch == nil {
+		// discard
+		return
+	}
+
+	doc.ch <- v
+}
+
+func (doc *ChanWriter) Close() {
+	doc.Lock()
+	if doc.ch != nil {
+		close(doc.ch)
+		doc.ch = nil
+	}
+	doc.Unlock()
 }
 
 type ChanReader <-chan *graph.SolveStatus
