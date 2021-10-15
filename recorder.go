@@ -26,21 +26,15 @@ type Recorder struct {
 	w        Writer
 	vertexes map[digest.Digest]*VertexRecorder
 
-	displaying    *sync.WaitGroup
-	displayCtx    context.Context
-	displayCancel func()
+	displaying *sync.WaitGroup
 }
 
 func NewRecorder(w Writer) *Recorder {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &Recorder{
 		w:        w,
 		vertexes: map[digest.Digest]*VertexRecorder{},
 
-		displaying:    &sync.WaitGroup{},
-		displayCtx:    ctx,
-		displayCancel: cancel,
+		displaying: &sync.WaitGroup{},
 	}
 }
 
@@ -58,17 +52,16 @@ func (recorder *Recorder) Record(status *graph.SolveStatus) {
 	recorder.w.WriteStatus(status)
 }
 
-func (recorder *Recorder) Display(phase string, c console.Console, w io.Writer, r ui.Reader) {
+func (recorder *Recorder) Display(ctx context.Context, phase string, c console.Console, w io.Writer, r ui.Reader) {
 	recorder.displaying.Add(1)
 	go func() {
-		ui.DisplaySolveStatus(recorder.displayCtx, phase, c, w, r)
+		ui.DisplaySolveStatus(ctx, phase, c, w, r)
 		recorder.displaying.Done()
 	}()
 }
 
 func (recorder *Recorder) Stop() {
 	recorder.w.Close()
-	recorder.displayCancel()
 	recorder.displaying.Wait()
 }
 
