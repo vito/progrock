@@ -28,6 +28,7 @@ type lastStatus struct {
 
 type textMux struct {
 	w        io.Writer
+	ui       Components
 	current  digest.Digest
 	last     map[string]lastStatus
 	notFirst bool
@@ -51,7 +52,7 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 			}
 			old.logsOffset = 0
 			old.count = 0
-			fmt.Fprintf(p.w, "#%d ...\n", old.index)
+			fmt.Fprintf(p.w, p.ui.TextContextSwitched, old.index)
 		}
 
 		if p.notFirst {
@@ -61,9 +62,9 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 		}
 
 		if os.Getenv("PROGRESS_NO_TRUNC") == "0" {
-			fmt.Fprintf(p.w, "#%d %s\n", v.index, limitString(v.Name, 72))
+			fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, limitString(v.Name, 72))
 		} else {
-			fmt.Fprintf(p.w, "#%d %s\n", v.index, v.Name)
+			fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, v.Name)
 		}
 
 	}
@@ -72,7 +73,7 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 		v.logsOffset = 0
 	}
 	for _, ev := range v.events {
-		fmt.Fprintf(p.w, "#%d %s\n", v.index, ev)
+		fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, ev)
 	}
 	v.events = v.events[:0]
 
@@ -100,27 +101,31 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 				Current:   s.Current,
 			}
 
-			var bytes string
+			segs := []string{s.ID}
+
 			if s.Total != 0 {
-				bytes = fmt.Sprintf(" %.2f / %.2f", units.Bytes(s.Current), units.Bytes(s.Total))
+				segs = append(segs, fmt.Sprintf(p.ui.TextVertexStatusProgressBound, units.Bytes(s.Current), units.Bytes(s.Total)))
 			} else if s.Current != 0 {
-				bytes = fmt.Sprintf(" %.2f", units.Bytes(s.Current))
+				segs = append(segs, fmt.Sprintf(p.ui.TextVertexStatusProgressUnbound, units.Bytes(s.Current)))
 			}
-			var tm string
+
 			endTime := s.Timestamp
 			if s.Completed != nil {
 				endTime = *s.Completed
 			}
+
 			if s.Started != nil {
 				diff := endTime.Sub(*s.Started).Seconds()
 				if diff > 0.01 {
-					tm = fmt.Sprintf(" %.1fs", diff)
+					segs = append(segs, fmt.Sprintf(p.ui.TextVertexStatusDuration, diff))
 				}
 			}
+
 			if s.Completed != nil {
-				tm += " done"
+				segs = append(segs, p.ui.TextVertexStatusComplete)
 			}
-			fmt.Fprintf(p.w, "#%d %s%s%s\n", v.index, s.ID, bytes, tm)
+
+			fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, strings.Join(segs, " "))
 		}
 	}
 	v.statusUpdates = map[string]struct{}{}
@@ -162,18 +167,16 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 				fmt.Fprintln(p.w, "")
 			}
 			if strings.HasSuffix(v.Error, context.Canceled.Error()) {
-				fmt.Fprintf(p.w, "#%d CANCELED\n", v.index)
+				fmt.Fprintf(p.w, p.ui.TextVertexCanceled, v.index)
 			} else {
-				fmt.Fprintf(p.w, "#%d ERROR: %s\n", v.index, v.Error)
+				fmt.Fprintf(p.w, p.ui.TextVertexErrored, v.index, v.Error)
 			}
 		} else if v.Cached {
-			fmt.Fprintf(p.w, "#%d CACHED\n", v.index)
+			fmt.Fprintf(p.w, p.ui.TextVertexCached, v.index)
+		} else if v.Started != nil {
+			fmt.Fprintf(p.w, p.ui.TextVertexDoneDuration, v.index, v.Completed.Sub(*v.Started).Seconds())
 		} else {
-			tm := ""
-			if v.Started != nil {
-				tm = fmt.Sprintf(" %.1fs", v.Completed.Sub(*v.Started).Seconds())
-			}
-			fmt.Fprintf(p.w, "#%d DONE%s\n", v.index, tm)
+			fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index)
 		}
 
 	}

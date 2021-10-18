@@ -24,32 +24,17 @@ type Reader interface {
 	ReadStatus() (*graph.SolveStatus, bool)
 }
 
-func Display(phase string, w io.Writer, r Reader) error {
-	var c console.Console
-	if file, ok := w.(console.File); ok {
-		var err error
-		c, err = console.ConsoleFromFile(file)
-		if err != nil {
-			c = nil
-		}
-	}
-
-	// don't get interrupted; exhaust the channel
-	progCtx := context.Background()
-	return DisplaySolveStatus(progCtx, phase, c, os.Stderr, r)
+func DisplaySolveStatus(ctx context.Context, c console.Console, w io.Writer, r Reader) error {
+	return Default.DisplaySolveStatus(ctx, c, w, r)
 }
 
-func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w io.Writer, r Reader) error {
+func (ui Components) DisplaySolveStatus(ctx context.Context, c console.Console, w io.Writer, r Reader) error {
 	modeConsole := c != nil
 
-	if phase == "" {
-		phase = "Building"
-	}
+	disp := &display{c: c, ui: ui}
+	printer := &textMux{w: w, ui: ui}
 
-	disp := &display{c: c, phase: phase}
-	printer := &textMux{w: w}
-
-	t := newTrace(w, modeConsole)
+	t := newTrace(w, modeConsole, ui)
 
 	tickerTimeout := 150 * time.Millisecond
 	displayTimeout := 100 * time.Millisecond
@@ -134,6 +119,7 @@ type job struct {
 
 type trace struct {
 	w             io.Writer
+	ui            Components
 	localTimeDiff time.Duration
 	vertexes      []*vertex
 	byDigest      map[digest.Digest]*vertex
@@ -154,7 +140,7 @@ type vertex struct {
 	logsOffset    int
 	logsBuffer    *ring.Ring // stores last logs to print them on error
 	prev          *graph.Vertex
-	events        []string
+	events        []string // TODO: unused
 	lastBlockTime *time.Time
 	count         int
 	statusUpdates map[string]struct{}
@@ -179,12 +165,13 @@ type status struct {
 	*graph.VertexStatus
 }
 
-func newTrace(w io.Writer, modeConsole bool) *trace {
+func newTrace(w io.Writer, modeConsole bool, ui Components) *trace {
 	return &trace{
 		byDigest:    make(map[digest.Digest]*vertex),
 		updates:     make(map[digest.Digest]struct{}),
 		w:           w,
 		modeConsole: modeConsole,
+		ui:          ui,
 	}
 }
 
@@ -299,11 +286,11 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 				prec := 1
 				sec := ts.Seconds()
 				if sec < 10 {
-					prec = 3
-				} else if sec < 100 {
 					prec = 2
+				} else if sec < 100 {
+					prec = 1
 				}
-				v.logs = append(v.logs, []byte(fmt.Sprintf("#%d %s %s", v.index, fmt.Sprintf("%.[2]*[1]f", sec, prec), dt)))
+				v.logs = append(v.logs, []byte(fmt.Sprintf(t.ui.LogFormat, v.index, fmt.Sprintf(t.ui.LogTimingFormat, sec, prec), dt)))
 			}
 			i++
 		})
@@ -316,8 +303,7 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 func (t *trace) printErrorLogs(f io.Writer) {
 	for _, v := range t.vertexes {
 		if v.Error != "" && !strings.HasSuffix(v.Error, context.Canceled.Error()) {
-			fmt.Fprintln(f, "------")
-			fmt.Fprintf(f, " > %s:\n", v.Name)
+			fmt.Fprintf(f, t.ui.ErrorHeader, v.Name)
 			// tty keeps original logs
 			for _, l := range v.logs {
 				f.Write(l)
@@ -332,7 +318,8 @@ func (t *trace) printErrorLogs(f io.Writer) {
 					v.logsBuffer = v.logsBuffer.Next()
 				}
 			}
-			fmt.Fprintln(f, "------")
+
+			fmt.Fprintln(f, t.ui.ErrorFooter, v.Name)
 		}
 	}
 }
@@ -361,30 +348,42 @@ func (t *trace) displayInfo() (d displayInfo) {
 			name:          strings.Replace(v.Name, "\t", " ", -1),
 			vertex:        v,
 		}
-		if v.Error != "" {
+
+		if v.Completed == nil {
+			j.name = fmt.Sprintf(t.ui.ConsoleVertexRunning, j.name)
+		} else if v.Error != "" {
 			if strings.HasSuffix(v.Error, context.Canceled.Error()) {
 				j.isCanceled = true
-				j.name = "CANCELED " + j.name
+				j.name = fmt.Sprintf(t.ui.ConsoleVertexCanceled, j.name)
 			} else {
 				j.hasError = true
-				j.name = "ERROR " + j.name
+				j.name = fmt.Sprintf(t.ui.ConsoleVertexErrored, j.name)
 			}
+		} else if v.Cached {
+			j.name = fmt.Sprintf(t.ui.ConsoleVertexCached, j.name)
+		} else {
+			j.name = fmt.Sprintf(t.ui.ConsoleVertexDone, j.name)
 		}
-		if v.Cached {
-			j.name = "CACHED " + j.name
-		}
+
 		j.name = v.indent + j.name
 		jobs = append(jobs, j)
 		for _, s := range v.statuses {
 			j := &job{
 				startTime:     addTime(s.Started, t.localTimeDiff),
 				completedTime: addTime(s.Completed, t.localTimeDiff),
-				name:          v.indent + "=> " + s.ID,
+				name:          v.indent + fmt.Sprintf(t.ui.ConsoleVertexStatus, s.ID),
 			}
 			if s.Total != 0 {
-				j.status = fmt.Sprintf("%.2f / %.2f", units.Bytes(s.Current), units.Bytes(s.Total))
+				j.status = fmt.Sprintf(
+					t.ui.ConsoleVertexStatusProgressBound,
+					units.Bytes(s.Current),
+					units.Bytes(s.Total),
+				)
 			} else if s.Current != 0 {
-				j.status = fmt.Sprintf("%.2f", units.Bytes(s.Current))
+				j.status = fmt.Sprintf(
+					t.ui.ConsoleVertexStatusProgressUnbound,
+					units.Bytes(s.Current),
+				)
 			}
 			jobs = append(jobs, j)
 		}
@@ -424,8 +423,9 @@ func addTime(tm *time.Time, d time.Duration) *time.Time {
 
 type display struct {
 	c         console.Console
-	phase     string
+	ui        Components
 	lineCount int
+	maxWidth  int
 	repeated  bool
 }
 
@@ -487,71 +487,71 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	disp.repeated = true
 	fmt.Fprint(disp.c, b.Column(0).ANSI)
 
-	statusStr := ""
+	statusFmt := disp.ui.ConsoleRunning
 	if d.countCompleted > 0 && d.countCompleted == d.countTotal && all {
-		statusStr = "FINISHED"
+		statusFmt = disp.ui.ConsoleDone
 	}
 
 	fmt.Fprint(disp.c, aec.Hide)
 	defer fmt.Fprint(disp.c, aec.Show)
 
-	out := fmt.Sprintf("[+] %s %.1fs (%d/%d) %s", disp.phase, time.Since(d.startTime).Seconds(), d.countCompleted, d.countTotal, statusStr)
-	out = align(out, "", width)
+	out := fmt.Sprintf(
+		statusFmt,
+		disp.ui.ConsolePhase,
+		time.Since(d.startTime).Seconds(),
+		d.countCompleted,
+		d.countTotal,
+	)
+
 	fmt.Fprintln(disp.c, out)
+
 	lineCount := 0
 	for _, j := range d.jobs {
 		endTime := time.Now()
 		if j.completedTime != nil {
 			endTime = *j.completedTime
 		}
+
 		if j.startTime == nil {
 			continue
 		}
-		dt := endTime.Sub(*j.startTime).Seconds()
-		if dt < 0.05 {
-			dt = 0
-		}
-		pfx := " => "
-		timer := fmt.Sprintf(" %3.1fs\n", dt)
-		status := j.status
-		showStatus := false
 
-		left := width - len(pfx) - len(timer) - 1
-		if status != "" {
-			if left+len(status) > 20 {
-				showStatus = true
-				left -= len(status) + 1
-			}
-		}
-		if left < 12 { // too small screen to show progress
-			continue
-		}
-		name := j.name
-		if len(name) > left {
-			name = name[:left]
-		}
+		dt := endTime.Sub(*j.startTime).Truncate(time.Millisecond)
 
-		out := pfx + name
-		if showStatus {
-			out += " " + status
-		}
-
-		out = align(out, timer, width)
+		var dur string
 		if j.completedTime != nil {
-			color := aec.BlueF
-			if j.isCanceled {
-				color = aec.YellowF
-			} else if j.hasError {
-				color = aec.RedF
-			}
-			out = aec.Apply(out, color)
+			dur = fmt.Sprintf(disp.ui.ConsoleVertexDoneDuration, dt)
+		} else {
+			dur = fmt.Sprintf(disp.ui.ConsoleVertexRunningDuration, dt)
 		}
+
+		out := j.name
+		if j.status != "" {
+			out += " " + j.status
+		}
+
+		out += " " + dur
+
+		l := nonAnsiLen(out)
+		if l > disp.maxWidth {
+			disp.maxWidth = l
+		}
+
 		fmt.Fprint(disp.c, out)
+
+		// clear out content previously written on other lines
+		fmt.Fprintln(disp.c, strings.Repeat(" ", disp.maxWidth-l))
+
 		lineCount++
 		if j.showTerm {
 			term := j.vertex.term
 			term.Resize(termHeight, width-termPad)
-			lineCount += renderTerm(disp.c, term)
+			lines, maxWidth := renderTerm(disp.c, disp.ui, term)
+			lineCount += lines
+			if maxWidth > disp.maxWidth {
+				disp.maxWidth = maxWidth
+			}
+
 			j.vertex.termCount++
 			j.showTerm = false
 		}
@@ -566,17 +566,20 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	disp.lineCount = lineCount
 }
 
-func renderTerm(w io.Writer, term *vt100.VT100) int {
+func renderTerm(w io.Writer, ui Components, term *vt100.VT100) (int, int) {
 	used := term.UsedHeight()
 
 	lineCount := 0
+	maxWidth := 0
 	for row, l := range term.Content {
 		if row+1 > used {
 			break
 		}
 
 		var lastFormat vt100.Format
-		fmt.Fprint(w, "    | ")
+		fmt.Fprint(w, ui.ConsoleTermPrefix)
+
+		var maxCol int
 		for col, r := range l {
 			f := term.Format[row][col]
 
@@ -586,15 +589,24 @@ func renderTerm(w io.Writer, term *vt100.VT100) int {
 			}
 
 			fmt.Fprint(w, string(r))
+
+			if r != ' ' && col > maxCol {
+				maxCol = col
+			}
 		}
 
 		// reset to prevent leaking format into the line prefix
 		fmt.Fprintln(w, aec.Reset)
 
 		lineCount++
+
+		width := nonAnsiLen(ui.ConsoleTermPrefix) + (maxCol + 1)
+		if width > maxWidth {
+			maxWidth = width
+		}
 	}
 
-	return lineCount
+	return lineCount, maxWidth
 }
 
 func printFormat(w io.Writer, f vt100.Format) {
@@ -653,10 +665,6 @@ func printFormat(w io.Writer, f vt100.Format) {
 	fmt.Fprint(w, b.ANSI)
 }
 
-func align(l, r string, w int) string {
-	return fmt.Sprintf("%-[2]*[1]s %[3]s", l, w-len(r)-1, r)
-}
-
 func wrapHeight(j []*job, limit int) []*job {
 	if limit < 0 {
 		return nil
@@ -699,4 +707,28 @@ func proxy(ch chan<- *graph.SolveStatus, r Reader) {
 
 		ch <- status
 	}
+}
+
+func nonAnsiLen(s string) int {
+	l := 0
+
+	var inAnsi bool
+	for _, c := range s {
+		if inAnsi {
+			if c == 'm' {
+				inAnsi = false
+			}
+
+			continue
+		}
+
+		if c == '\x1b' {
+			inAnsi = true
+			continue
+		}
+
+		l++
+	}
+
+	return l
 }

@@ -1,22 +1,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/containerd/console"
 	"github.com/vito/progrock"
-	"golang.org/x/sync/errgroup"
+	"github.com/vito/progrock/ui"
 )
 
 func main() {
-	rec := progrock.NewRecorder()
+	r, w := progrock.Pipe()
+	rec := progrock.NewRecorder(w)
 
-	eg := new(errgroup.Group)
-
-	eg.Go(func() error {
-		return rec.Display("Demo", os.Stderr)
-	})
+	rec.Display(context.Background(), ui.Default, console.Current(), os.Stderr, r)
+	defer rec.Stop()
 
 	failed := rec.Vertex("failed vertex", "failed vertex")
 	fmt.Fprintln(failed.Stderr(), "some logs")
@@ -53,11 +53,5 @@ func main() {
 
 	succeeds.Complete()
 
-	rec.Close()
-
-	err := eg.Wait()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	w.Close()
 }

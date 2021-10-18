@@ -52,11 +52,11 @@ func (recorder *Recorder) Record(status *graph.SolveStatus) {
 	recorder.w.WriteStatus(status)
 }
 
-func (recorder *Recorder) Display(ctx context.Context, phase string, c console.Console, w io.Writer, r ui.Reader) {
+func (recorder *Recorder) Display(ctx context.Context, ui ui.Components, c console.Console, w io.Writer, r ui.Reader) {
 	recorder.displaying.Add(1)
 	go func() {
-		ui.DisplaySolveStatus(ctx, phase, c, w, r)
-		recorder.displaying.Done()
+		defer recorder.displaying.Done()
+		ui.DisplaySolveStatus(ctx, c, w, r)
 	}()
 }
 
