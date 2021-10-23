@@ -41,7 +41,7 @@ var Default = Components{
 	ConsoleRunning: "%s %.1fs (%d/%d)",
 	ConsoleDone:    "%s %.1fs (%d/%d) " + aec.GreenF.Apply("done"),
 
-	ConsoleLogFormat:                   "  | %s",
+	ConsoleLogFormat:                   "  " + aec.LightBlackF.Apply("│") + " %s",
 	ConsoleVertexRunning:               aec.YellowF.Apply("=> %s"),
 	ConsoleVertexCanceled:              aec.YellowF.Apply("=> %s CANCELED"),
 	ConsoleVertexErrored:               aec.RedF.Apply("=> %s ERROR"),
