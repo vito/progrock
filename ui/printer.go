@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -61,21 +60,8 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 			p.notFirst = true
 		}
 
-		if os.Getenv("PROGRESS_NO_TRUNC") == "0" {
-			fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, limitString(v.Name, 72))
-		} else {
-			fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, v.Name)
-		}
-
+		p.printHeader(v)
 	}
-
-	if len(v.events) != 0 {
-		v.logsOffset = 0
-	}
-	for _, ev := range v.events {
-		fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, ev)
-	}
-	v.events = v.events[:0]
 
 	for _, s := range v.statuses {
 		if _, ok := v.statusUpdates[s.ID]; ok {
@@ -109,23 +95,13 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 				segs = append(segs, fmt.Sprintf(p.ui.TextVertexStatusProgressUnbound, units.Bytes(s.Current)))
 			}
 
-			endTime := s.Timestamp
+			var dur string
 			if s.Completed != nil {
-				endTime = *s.Completed
+				dur = duration(p.ui, s.Completed.Sub(*s.Started), s.Completed != nil)
 			}
 
-			if s.Started != nil {
-				diff := endTime.Sub(*s.Started).Seconds()
-				if diff > 0.01 {
-					segs = append(segs, fmt.Sprintf(p.ui.TextVertexStatusDuration, diff))
-				}
-			}
-
-			if s.Completed != nil {
-				segs = append(segs, p.ui.TextVertexStatusComplete)
-			}
-
-			fmt.Fprintf(p.w, p.ui.TextLogFormat, v.index, strings.Join(segs, " "))
+			fmt.Fprintf(p.w, p.ui.TextVertexStatus, v.index, dur, strings.Join(segs, " "))
+			fmt.Fprintln(p.w)
 		}
 	}
 	v.statusUpdates = map[string]struct{}{}
@@ -162,26 +138,34 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 		p.current = ""
 		v.count = 0
 
-		if v.Error != "" {
-			if v.logsPartial {
-				fmt.Fprintln(p.w, "")
-			}
-			if strings.HasSuffix(v.Error, context.Canceled.Error()) {
-				fmt.Fprintf(p.w, p.ui.TextVertexCanceled, v.index)
-			} else {
-				fmt.Fprintf(p.w, p.ui.TextVertexErrored, v.index, v.Error)
-			}
-		} else if v.Cached {
-			fmt.Fprintf(p.w, p.ui.TextVertexCached, v.index)
-		} else if v.Started != nil {
-			fmt.Fprintf(p.w, p.ui.TextVertexDoneDuration, v.index, v.Completed.Sub(*v.Started).Seconds())
-		} else {
-			fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index)
+		if v.logsPartial {
+			fmt.Fprintln(p.w, "")
 		}
 
+		p.printHeader(v)
 	}
 
 	delete(t.updates, dgst)
+}
+
+func (p *textMux) printHeader(v *vertex) {
+	if v.Error != "" {
+		if strings.HasSuffix(v.Error, context.Canceled.Error()) {
+			fmt.Fprintf(p.w, p.ui.TextVertexCanceled, v.index, v.Name)
+		} else {
+			fmt.Fprintf(p.w, p.ui.TextVertexErrored, v.index, v.Name, v.Error)
+		}
+	} else if v.Cached {
+		fmt.Fprintf(p.w, p.ui.TextVertexCached, v.index, v.Name)
+	} else if v.Completed != nil {
+		fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index, v.Name)
+	} else if v.Started != nil {
+		fmt.Fprintf(p.w, p.ui.TextVertexRunning, v.index, v.Name)
+	} else {
+		fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index, v.Name)
+	}
+
+	fmt.Fprintln(p.w)
 }
 
 func sortCompleted(t *trace, m map[digest.Digest]struct{}) []digest.Digest {

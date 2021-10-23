@@ -111,6 +111,7 @@ type job struct {
 	completedTime *time.Time
 	name          string
 	status        string
+	statuses      []*job
 	hasError      bool
 	isCanceled    bool
 	vertex        *vertex
@@ -140,7 +141,6 @@ type vertex struct {
 	logsOffset    int
 	logsBuffer    *ring.Ring // stores last logs to print them on error
 	prev          *graph.Vertex
-	events        []string // TODO: unused
 	lastBlockTime *time.Time
 	count         int
 	statusUpdates map[string]struct{}
@@ -275,7 +275,7 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 			v.term.Write(l.Data) // error unhandled on purpose. don't trust vt100
 		}
 		i := 0
-		complete := split(l.Data, byte('\n'), func(dt []byte) {
+		complete := split(l.Data, '\n', func(dt []byte) {
 			if v.logsPartial && len(v.logs) != 0 && i == 0 {
 				v.logs[len(v.logs)-1] = append(v.logs[len(v.logs)-1], dt...)
 			} else {
@@ -283,20 +283,30 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 				if v.Started != nil {
 					ts = l.Timestamp.Sub(*v.Started)
 				}
-				prec := 1
-				sec := ts.Seconds()
-				if sec < 10 {
-					prec = 2
-				} else if sec < 100 {
-					prec = 1
-				}
-				v.logs = append(v.logs, []byte(fmt.Sprintf(t.ui.LogFormat, v.index, fmt.Sprintf(t.ui.LogTimingFormat, sec, prec), dt)))
+
+				v.logs = append(v.logs, []byte(fmt.Sprintf(t.ui.TextLogFormat, v.index, duration(t.ui, ts, v.Completed != nil), dt)))
 			}
 			i++
 		})
 		v.logsPartial = !complete
 		t.updates[v.Digest] = struct{}{}
 		v.update(1)
+	}
+}
+
+func duration(ui Components, dt time.Duration, completed bool) string {
+	prec := 1
+	sec := dt.Seconds()
+	if sec < 10 {
+		prec = 2
+	} else if sec < 100 {
+		prec = 1
+	}
+
+	if completed {
+		return fmt.Sprintf(ui.DoneDuration, sec, prec)
+	} else {
+		return fmt.Sprintf(ui.RunningDuration, sec, prec)
 	}
 }
 
@@ -319,7 +329,9 @@ func (t *trace) printErrorLogs(f io.Writer) {
 				}
 			}
 
-			fmt.Fprintln(f, t.ui.ErrorFooter, v.Name)
+			if t.ui.ErrorFooter != "" {
+				fmt.Fprintf(f, t.ui.ErrorFooter, v.Name)
+			}
 		}
 	}
 }
@@ -342,7 +354,7 @@ func (t *trace) displayInfo() (d displayInfo) {
 			continue
 		}
 		var jobs []*job
-		j := &job{
+		vertexJob := &job{
 			startTime:     addTime(v.Started, t.localTimeDiff),
 			completedTime: addTime(v.Completed, t.localTimeDiff),
 			name:          strings.Replace(v.Name, "\t", " ", -1),
@@ -350,42 +362,42 @@ func (t *trace) displayInfo() (d displayInfo) {
 		}
 
 		if v.Completed == nil {
-			j.name = fmt.Sprintf(t.ui.ConsoleVertexRunning, j.name)
+			vertexJob.name = fmt.Sprintf(t.ui.ConsoleVertexRunning, vertexJob.name)
 		} else if v.Error != "" {
 			if strings.HasSuffix(v.Error, context.Canceled.Error()) {
-				j.isCanceled = true
-				j.name = fmt.Sprintf(t.ui.ConsoleVertexCanceled, j.name)
+				vertexJob.isCanceled = true
+				vertexJob.name = fmt.Sprintf(t.ui.ConsoleVertexCanceled, vertexJob.name)
 			} else {
-				j.hasError = true
-				j.name = fmt.Sprintf(t.ui.ConsoleVertexErrored, j.name)
+				vertexJob.hasError = true
+				vertexJob.name = fmt.Sprintf(t.ui.ConsoleVertexErrored, vertexJob.name)
 			}
 		} else if v.Cached {
-			j.name = fmt.Sprintf(t.ui.ConsoleVertexCached, j.name)
+			vertexJob.name = fmt.Sprintf(t.ui.ConsoleVertexCached, vertexJob.name)
 		} else {
-			j.name = fmt.Sprintf(t.ui.ConsoleVertexDone, j.name)
+			vertexJob.name = fmt.Sprintf(t.ui.ConsoleVertexDone, vertexJob.name)
 		}
 
-		j.name = v.indent + j.name
-		jobs = append(jobs, j)
+		vertexJob.name = v.indent + vertexJob.name
+		jobs = append(jobs, vertexJob)
 		for _, s := range v.statuses {
-			j := &job{
+			statusJob := &job{
 				startTime:     addTime(s.Started, t.localTimeDiff),
 				completedTime: addTime(s.Completed, t.localTimeDiff),
 				name:          v.indent + fmt.Sprintf(t.ui.ConsoleVertexStatus, s.ID),
 			}
 			if s.Total != 0 {
-				j.status = fmt.Sprintf(
+				statusJob.status = fmt.Sprintf(
 					t.ui.ConsoleVertexStatusProgressBound,
 					units.Bytes(s.Current),
 					units.Bytes(s.Total),
 				)
 			} else if s.Current != 0 {
-				j.status = fmt.Sprintf(
+				statusJob.status = fmt.Sprintf(
 					t.ui.ConsoleVertexStatusProgressUnbound,
 					units.Bytes(s.Current),
 				)
 			}
-			jobs = append(jobs, j)
+			vertexJob.statuses = append(vertexJob.statuses, statusJob)
 		}
 		d.jobs = append(d.jobs, jobs...)
 		v.jobs = jobs
@@ -480,7 +492,7 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	// this output is inspired by Buck
 	d.jobs = setupTerminals(d.jobs, termHeight, height, all)
 	b := aec.EmptyBuilder
-	b = b.Up(uint(disp.lineCount) + 1)
+	b = b.Up(uint(disp.lineCount))
 	if !disp.repeated {
 		b = b.Down(1)
 	}
@@ -495,7 +507,10 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	fmt.Fprint(disp.c, aec.Hide)
 	defer fmt.Fprint(disp.c, aec.Show)
 
-	out := fmt.Sprintf(
+	var lineCount int
+
+	fmt.Fprintf(
+		disp.c,
 		statusFmt,
 		disp.ui.ConsolePhase,
 		time.Since(d.startTime).Seconds(),
@@ -503,59 +518,13 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 		d.countTotal,
 	)
 
-	fmt.Fprintln(disp.c, out)
+	fmt.Fprintln(disp.c)
+	lineCount++
 
-	lineCount := 0
 	for _, j := range d.jobs {
-		endTime := time.Now()
-		if j.completedTime != nil {
-			endTime = *j.completedTime
-		}
-
-		if j.startTime == nil {
-			continue
-		}
-
-		dt := endTime.Sub(*j.startTime).Truncate(time.Millisecond)
-
-		var dur string
-		if j.completedTime != nil {
-			dur = fmt.Sprintf(disp.ui.ConsoleVertexDoneDuration, dt)
-		} else {
-			dur = fmt.Sprintf(disp.ui.ConsoleVertexRunningDuration, dt)
-		}
-
-		out := j.name
-		if j.status != "" {
-			out += " " + j.status
-		}
-
-		out += " " + dur
-
-		l := nonAnsiLen(out)
-		if l > disp.maxWidth {
-			disp.maxWidth = l
-		}
-
-		fmt.Fprint(disp.c, out)
-
-		// clear out content previously written on other lines
-		fmt.Fprintln(disp.c, strings.Repeat(" ", disp.maxWidth-l))
-
-		lineCount++
-		if j.showTerm {
-			term := j.vertex.term
-			term.Resize(termHeight, width-termPad)
-			lines, maxWidth := renderTerm(disp.c, disp.ui, term)
-			lineCount += lines
-			if maxWidth > disp.maxWidth {
-				disp.maxWidth = maxWidth
-			}
-
-			j.vertex.termCount++
-			j.showTerm = false
-		}
+		lineCount += disp.printJob(j, d, termHeight, width, height, all)
 	}
+
 	// override previous content
 	if diff := disp.lineCount - lineCount; diff > 0 {
 		for i := 0; i < diff; i++ {
@@ -563,7 +532,74 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 		}
 		fmt.Fprint(disp.c, aec.EmptyBuilder.Up(uint(diff)).Column(0).ANSI)
 	}
+
 	disp.lineCount = lineCount
+}
+
+func (disp *display) printJob(j *job, d displayInfo, termHeight, width, height int, all bool) int {
+	endTime := time.Now()
+	if j.completedTime != nil {
+		endTime = *j.completedTime
+	}
+
+	var lineCount int
+
+	if j.startTime == nil {
+		return lineCount
+	}
+
+	dt := endTime.Sub(*j.startTime).Truncate(time.Millisecond)
+
+	dur := duration(disp.ui, dt, j.completedTime != nil)
+
+	out := j.name
+	if j.status != "" {
+		out += " " + j.status
+	}
+
+	out += " " + dur
+
+	l := nonAnsiLen(out)
+	if l > disp.maxWidth {
+		disp.maxWidth = l
+	}
+
+	// print with trailing whitespace to clear out previously written text
+	fmt.Fprintf(disp.c, "%-[2]*[1]s\n", out, disp.maxWidth)
+	lineCount++
+
+	for _, s := range j.statuses {
+		lineCount += disp.printJob(
+			s,
+			d,
+			termHeight,
+			width,
+			height,
+
+			// NB: technically this doesn't do anything since logs can only be tied
+			// to a toplevel vertex, but this seems like the right semantics if/when
+			// that changes
+			j.showTerm,
+		)
+	}
+
+	if j.showTerm {
+		term := j.vertex.term
+		term.Resize(termHeight, width-termPad)
+
+		lines, maxWidth := renderTerm(disp.c, disp.ui, term)
+
+		lineCount += lines
+
+		if maxWidth > disp.maxWidth {
+			disp.maxWidth = maxWidth
+		}
+
+		j.vertex.termCount++
+		j.showTerm = false
+	}
+
+	return lineCount
 }
 
 func renderTerm(w io.Writer, ui Components, term *vt100.VT100) (int, int) {
@@ -577,30 +613,26 @@ func renderTerm(w io.Writer, ui Components, term *vt100.VT100) (int, int) {
 		}
 
 		var lastFormat vt100.Format
-		fmt.Fprint(w, ui.ConsoleTermPrefix)
 
-		var maxCol int
+		var line string
 		for col, r := range l {
 			f := term.Format[row][col]
 
 			if f != lastFormat {
 				lastFormat = f
-				printFormat(w, f)
+				line += renderFormat(f)
 			}
 
-			fmt.Fprint(w, string(r))
-
-			if r != ' ' && col > maxCol {
-				maxCol = col
-			}
+			line += string(r)
 		}
 
-		// reset to prevent leaking format into the line prefix
-		fmt.Fprintln(w, aec.Reset)
+		line += aec.Reset
 
+		out := fmt.Sprintf(ui.ConsoleLogFormat, line)
+		fmt.Fprintf(w, "%s\n", out)
 		lineCount++
 
-		width := nonAnsiLen(ui.ConsoleTermPrefix) + (maxCol + 1)
+		width := nonAnsiLen(out)
 		if width > maxWidth {
 			maxWidth = width
 		}
@@ -609,10 +641,9 @@ func renderTerm(w io.Writer, ui Components, term *vt100.VT100) (int, int) {
 	return lineCount, maxWidth
 }
 
-func printFormat(w io.Writer, f vt100.Format) {
+func renderFormat(f vt100.Format) string {
 	if f == (vt100.Format{}) {
-		fmt.Fprint(w, aec.Reset)
-		return
+		return aec.Reset
 	}
 
 	b := aec.EmptyBuilder
@@ -662,7 +693,7 @@ func printFormat(w io.Writer, f vt100.Format) {
 		b = b.Faint()
 	}
 
-	fmt.Fprint(w, b.ANSI)
+	return b.ANSI.String()
 }
 
 func wrapHeight(j []*job, limit int) []*job {
