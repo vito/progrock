@@ -499,27 +499,27 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 	disp.repeated = true
 	fmt.Fprint(disp.c, b.Column(0).ANSI)
 
-	statusFmt := disp.ui.ConsoleRunning
-	if d.countCompleted > 0 && d.countCompleted == d.countTotal && all {
-		statusFmt = disp.ui.ConsoleDone
-	}
-
 	fmt.Fprint(disp.c, aec.Hide)
 	defer fmt.Fprint(disp.c, aec.Show)
 
 	var lineCount int
 
-	fmt.Fprintf(
-		disp.c,
-		statusFmt,
-		disp.ui.ConsolePhase,
-		time.Since(d.startTime).Seconds(),
-		d.countCompleted,
-		d.countTotal,
-	)
+	statusFmt := disp.ui.ConsoleRunning
+	if d.countCompleted > 0 && d.countCompleted == d.countTotal && all {
+		statusFmt = disp.ui.ConsoleDone
+	}
 
-	fmt.Fprintln(disp.c)
-	lineCount++
+	if statusFmt != "" {
+		statusLine := fmt.Sprintf(
+			statusFmt,
+			time.Since(d.startTime).Seconds(),
+			d.countCompleted,
+			d.countTotal,
+		)
+
+		fmt.Fprintf(disp.c, "%-[2]*[1]s\n", statusLine, disp.maxWidth)
+		lineCount++
+	}
 
 	for _, j := range d.jobs {
 		lineCount += disp.printJob(j, d, termHeight, width, height, all)

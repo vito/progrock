@@ -3,7 +3,6 @@ package ui
 import "github.com/morikuni/aec"
 
 type Components struct {
-	ConsolePhase                       string
 	ConsoleRunning, ConsoleDone        string
 	ConsoleLogFormat                   string
 	ConsoleVertexRunning               string
@@ -37,9 +36,8 @@ type Components struct {
 var vertexID = aec.MagentaF.Apply("%d:")
 
 var Default = Components{
-	ConsolePhase:   "Building",
-	ConsoleRunning: "%s %.1fs (%d/%d)",
-	ConsoleDone:    "%s %.1fs (%d/%d) " + aec.GreenF.Apply("done"),
+	ConsoleRunning: "Building %.1fs (%d/%d)",
+	ConsoleDone:    "Building %.1fs (%d/%d) " + aec.GreenF.Apply("done"),
 
 	ConsoleLogFormat:                   "  " + aec.LightBlackF.Apply("│") + " %s",
 	ConsoleVertexRunning:               aec.YellowF.Apply("=> %s"),
