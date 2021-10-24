@@ -36,8 +36,8 @@ type Components struct {
 var vertexID = aec.MagentaF.Apply("%d:")
 
 var Default = Components{
-	ConsoleRunning: "Building %.1fs (%d/%d)",
-	ConsoleDone:    "Building %.1fs (%d/%d) " + aec.GreenF.Apply("done"),
+	ConsoleRunning: "Building %s (%d/%d)",
+	ConsoleDone:    "Building %s (%d/%d) " + aec.GreenF.Apply("done"),
 
 	ConsoleLogFormat:                   "  " + aec.LightBlackF.Apply("│") + " %s",
 	ConsoleVertexRunning:               aec.YellowF.Apply("=> %s"),

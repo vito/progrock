@@ -504,15 +504,17 @@ func (disp *display) print(d displayInfo, termHeight, width, height int, all boo
 
 	var lineCount int
 
+	done := d.countCompleted > 0 && d.countCompleted == d.countTotal && all
+
 	statusFmt := disp.ui.ConsoleRunning
-	if d.countCompleted > 0 && d.countCompleted == d.countTotal && all {
+	if done {
 		statusFmt = disp.ui.ConsoleDone
 	}
 
 	if statusFmt != "" {
 		statusLine := fmt.Sprintf(
 			statusFmt,
-			time.Since(d.startTime).Seconds(),
+			duration(disp.ui, time.Since(d.startTime), done),
 			d.countCompleted,
 			d.countTotal,
 		)
