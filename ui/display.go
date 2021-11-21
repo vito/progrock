@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -292,6 +293,21 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 		t.updates[v.Digest] = struct{}{}
 		v.update(1)
 	}
+
+	// chronological order based on last activity
+	sort.Slice(t.vertexes, func(i, j int) bool {
+		iv := t.vertexes[i]
+		jv := t.vertexes[j]
+		if iv.Completed != nil && jv.Completed != nil {
+			return !iv.Completed.After(*jv.Completed)
+		} else if iv.Completed != nil {
+			return true
+		} else if jv.Completed != nil {
+			return false
+		} else {
+			return false
+		}
+	})
 }
 
 func duration(ui Components, dt time.Duration, completed bool) string {
