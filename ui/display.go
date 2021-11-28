@@ -6,99 +6,200 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/containerd/console"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/morikuni/aec"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/units"
 	"github.com/vito/progrock/graph"
 	"github.com/vito/vt100"
-	"golang.org/x/time/rate"
 )
 
 type Reader interface {
 	ReadStatus() (*graph.SolveStatus, bool)
 }
 
-func DisplaySolveStatus(ctx context.Context, c console.Console, w io.Writer, r Reader) error {
-	return Default.DisplaySolveStatus(ctx, c, w, r)
+func DisplaySolveStatus(interrupt context.CancelFunc, w io.Writer, r Reader, tui bool) error {
+	return Default.DisplaySolveStatus(interrupt, w, r, tui)
 }
 
-func (ui Components) DisplaySolveStatus(ctx context.Context, c console.Console, w io.Writer, r Reader) error {
-	modeConsole := c != nil
+func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Writer, r Reader, tui bool) error {
+	model := NewModel(interrupt, w, ui, tui)
 
-	disp := &display{c: c, ui: ui}
-	printer := &textMux{w: w, ui: ui}
+	opts := []tea.ProgramOption{tea.WithOutput(w)}
 
-	t := newTrace(w, modeConsole, ui)
-
-	tickerTimeout := 150 * time.Millisecond
-	displayTimeout := 100 * time.Millisecond
-
-	if v := os.Getenv("TTY_DISPLAY_RATE"); v != "" {
-		if r, err := strconv.ParseInt(v, 10, 64); err == nil {
-			tickerTimeout = time.Duration(r) * time.Millisecond
-			displayTimeout = time.Duration(r) * time.Millisecond
-		}
+	if tui {
+		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	} else {
+		opts = append(opts, tea.WithoutRenderer())
 	}
 
-	var done bool
-	ticker := time.NewTicker(tickerTimeout)
-	defer ticker.Stop()
+	prog := tea.NewProgram(model, opts...)
 
-	displayLimiter := rate.NewLimiter(rate.Every(displayTimeout), 1)
+	go func() {
+		<-model.Ready()
 
-	width, height := disp.getSize()
-
-	termHeight := height / 2
-
-	ch := make(chan *graph.SolveStatus)
-	go proxy(ch, r)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		case ss, ok := <-ch:
+		for {
+			status, ok := r.ReadStatus()
 			if ok {
-				t.update(ss, termHeight, width)
+				prog.Send(statusMsg(status))
 			} else {
-				done = true
+				prog.Send(eofMsg{})
+				break
 			}
 		}
+	}()
 
-		if modeConsole {
-			width, height = disp.getSize()
-			if done {
-				disp.print(t.displayInfo(), termHeight, width, height, true)
-				t.printErrorLogs(c)
-				return nil
-			} else if displayLimiter.Allow() {
-				ticker.Stop()
-				ticker = time.NewTicker(tickerTimeout)
-				disp.print(t.displayInfo(), termHeight, width, height, false)
+	if err := prog.Start(); err != nil {
+		return err
+	}
+
+	model.Print(w)
+
+	return nil
+}
+
+func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool) *Model {
+	return &Model{
+		t: newTrace(ui, tui),
+
+		tui:     tui,
+		disp:    &display{ui: ui},
+		printer: &textMux{w: w, ui: ui},
+
+		interrupt: interrupt,
+
+		ready: make(chan struct{}),
+	}
+}
+
+type Model struct {
+	t *trace
+
+	tui     bool
+	disp    *display
+	printer *textMux
+
+	interrupt func()
+
+	ready    chan struct{}
+	viewport viewport.Model
+}
+
+func (model *Model) Ready() <-chan struct{} {
+	return model.ready
+}
+
+func (model *Model) Print(w io.Writer) {
+	if model.tui {
+		model.disp.print(
+			w,
+			model.t.displayInfo(),
+			termHeight,
+			model.viewport.Width,
+			model.viewport.Height,
+		)
+	} else {
+		model.printer.print(model.t)
+	}
+
+	model.t.printErrorLogs(w)
+}
+
+type statusMsg *graph.SolveStatus
+
+type eofMsg struct{}
+
+type tickMsg time.Time
+
+func tick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func (tui *Model) Init() tea.Cmd {
+	return tick()
+}
+
+const headerHeight = 0
+const footerHeight = 1
+const chromeHeight = headerHeight + footerHeight
+const termHeight = 12
+
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
+dance:
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if k := msg.String(); k == "ctrl+c" || k == "q" || k == "esc" {
+			m.interrupt()
+			return m, nil
+		}
+
+	case tea.WindowSizeMsg:
+		select {
+		case <-m.ready:
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - chromeHeight
+		default:
+			m.viewport = viewport.Model{
+				Width:  msg.Width,
+				Height: msg.Height - chromeHeight,
+			}
+
+			close(m.ready)
+		}
+
+	case statusMsg:
+		m.t.update(msg, termHeight, m.viewport.Width)
+
+	case eofMsg:
+		return m, tea.Quit
+
+	case tickMsg:
+		select {
+		case <-m.ready:
+		default:
+			break dance
+		}
+
+		if m.tui {
+			buf := new(bytes.Buffer)
+			m.disp.print(buf, m.t.displayInfo(), termHeight, m.viewport.Width, m.viewport.Height)
+
+			atBottom := m.viewport.AtBottom()
+			m.viewport.SetContent(buf.String())
+			if atBottom {
+				m.viewport.GotoBottom()
 			}
 		} else {
-			if done || displayLimiter.Allow() {
-				printer.print(t)
-				if done {
-					t.printErrorLogs(w)
-					return nil
-				}
-				ticker.Stop()
-				ticker = time.NewTicker(tickerTimeout)
-			}
+			m.printer.print(m.t)
 		}
+
+		cmds = append(cmds, tick())
 	}
+
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
-const termPad = 10
+func (m *Model) View() string {
+	status := m.disp.status(m.t.displayInfo())
+	return fmt.Sprintf("%s\n%s", status, m.viewport.View())
+}
+
+const termPad = 4
 
 type displayInfo struct {
 	startTime      time.Time
@@ -116,18 +217,16 @@ type job struct {
 	hasError      bool
 	isCanceled    bool
 	vertex        *vertex
-	showTerm      bool
 }
 
 type trace struct {
-	w             io.Writer
 	ui            Components
 	localTimeDiff time.Duration
 	vertexes      []*vertex
 	byDigest      map[digest.Digest]*vertex
 	nextIndex     int
 	updates       map[digest.Digest]struct{}
-	modeConsole   bool
+	tui           bool
 }
 
 type vertex struct {
@@ -151,7 +250,6 @@ type vertex struct {
 
 	term      *vt100.VT100
 	termBytes int
-	termCount int
 }
 
 func (v *vertex) update(c int) {
@@ -166,13 +264,12 @@ type status struct {
 	*graph.VertexStatus
 }
 
-func newTrace(w io.Writer, modeConsole bool, ui Components) *trace {
+func newTrace(ui Components, tui bool) *trace {
 	return &trace{
-		byDigest:    make(map[digest.Digest]*vertex),
-		updates:     make(map[digest.Digest]struct{}),
-		w:           w,
-		modeConsole: modeConsole,
-		ui:          ui,
+		byDigest: make(map[digest.Digest]*vertex),
+		updates:  make(map[digest.Digest]struct{}),
+		tui:      tui,
+		ui:       ui,
 	}
 }
 
@@ -227,7 +324,7 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 				statusUpdates: make(map[string]struct{}),
 				index:         t.nextIndex,
 			}
-			if t.modeConsole {
+			if t.tui {
 				t.byDigest[v.Digest].term = vt100.NewVT100(termHeight, termWidth-termPad)
 			}
 		}
@@ -450,120 +547,45 @@ func addTime(tm *time.Time, d time.Duration) *time.Time {
 }
 
 type display struct {
-	c         console.Console
-	ui        Components
-	lineCount int
-	maxWidth  int
-	repeated  bool
+	ui       Components
+	maxWidth int
+	repeated bool
 }
 
-func (disp *display) getSize() (int, int) {
-	width := 80
-	height := 10
-	if disp.c != nil {
-		size, err := disp.c.Size()
-		if err == nil && size.Width > 0 && size.Height > 0 {
-			width = int(size.Width)
-			height = int(size.Height)
-		}
-	}
-	return width, height
-}
-
-func setupTerminals(jobs []*job, termHeight, height int, all bool) []*job {
-	var candidates []*job
-	numInUse := 0
-	for i := len(jobs) - 1; i >= 0; i-- {
-		j := jobs[i]
-		if j.vertex != nil && j.vertex.termBytes > 0 {
-			candidates = append(candidates, j)
-		}
-		if j.completedTime == nil {
-			numInUse++
-		}
-	}
-
-	if all {
-		for i := 0; i < len(candidates); i++ {
-			candidates[i].showTerm = true
-		}
-	} else {
-		numFree := height - 2 - numInUse
-		numToHide := 0
-		termLimit := termHeight + 3
-
-		for i := 0; numFree > termLimit && i < len(candidates); i++ {
-			candidates[i].showTerm = true
-			numToHide += candidates[i].vertex.term.UsedHeight()
-			numFree -= termLimit
-		}
-
-		jobs = wrapHeight(jobs, height-2-numToHide)
-	}
-
-	return jobs
-}
-
-func (disp *display) print(d displayInfo, termHeight, width, height int, all bool) {
-	// this output is inspired by Buck
-	d.jobs = setupTerminals(d.jobs, termHeight, height, all)
-	b := aec.EmptyBuilder
-	b = b.Up(uint(disp.lineCount))
-	if !disp.repeated {
-		b = b.Down(1)
-	}
-	disp.repeated = true
-	fmt.Fprint(disp.c, b.Column(0).ANSI)
-
-	fmt.Fprint(disp.c, aec.Hide)
-	defer fmt.Fprint(disp.c, aec.Show)
-
-	var lineCount int
-
-	done := d.countCompleted > 0 && d.countCompleted == d.countTotal && all
+func (disp *display) status(d displayInfo) string {
+	done := d.countCompleted > 0 && d.countCompleted == d.countTotal
 
 	statusFmt := disp.ui.ConsoleRunning
 	if done {
 		statusFmt = disp.ui.ConsoleDone
 	}
 
-	if statusFmt != "" {
-		statusLine := fmt.Sprintf(
-			statusFmt,
-			duration(disp.ui, time.Since(d.startTime), done),
-			d.countCompleted,
-			d.countTotal,
-		)
-
-		fmt.Fprintf(disp.c, "%-[2]*[1]s\n", statusLine, disp.maxWidth)
-		lineCount++
+	if statusFmt == "" {
+		return ""
 	}
 
-	for _, j := range d.jobs {
-		lineCount += disp.printJob(j, d, termHeight, width, height, all)
-	}
-
-	// override previous content
-	if diff := disp.lineCount - lineCount; diff > 0 {
-		for i := 0; i < diff; i++ {
-			fmt.Fprintln(disp.c, strings.Repeat(" ", width))
-		}
-		fmt.Fprint(disp.c, aec.EmptyBuilder.Up(uint(diff)).Column(0).ANSI)
-	}
-
-	disp.lineCount = lineCount
+	return fmt.Sprintf(
+		statusFmt,
+		duration(disp.ui, time.Since(d.startTime), done),
+		d.countCompleted,
+		d.countTotal,
+	)
 }
 
-func (disp *display) printJob(j *job, d displayInfo, termHeight, width, height int, all bool) int {
+func (disp *display) print(w io.Writer, d displayInfo, termHeight, width, height int) {
+	for _, j := range d.jobs {
+		disp.printJob(w, j, d, termHeight, width, height)
+	}
+}
+
+func (disp *display) printJob(w io.Writer, j *job, d displayInfo, termHeight, width, height int) {
 	endTime := time.Now()
 	if j.completedTime != nil {
 		endTime = *j.completedTime
 	}
 
-	var lineCount int
-
 	if j.startTime == nil {
-		return lineCount
+		return
 	}
 
 	dt := endTime.Sub(*j.startTime).Truncate(time.Millisecond)
@@ -577,54 +599,29 @@ func (disp *display) printJob(j *job, d displayInfo, termHeight, width, height i
 
 	out += " " + dur
 
-	l := nonAnsiLen(out)
-	if l > disp.maxWidth {
-		disp.maxWidth = l
-	}
-
-	// print with trailing whitespace to clear out previously written text
-	fmt.Fprintf(disp.c, "%-[2]*[1]s\n", out, disp.maxWidth)
-	lineCount++
+	fmt.Fprintf(w, "%s\n", out)
 
 	for _, s := range j.statuses {
-		lineCount += disp.printJob(
+		disp.printJob(
+			w,
 			s,
 			d,
 			termHeight,
 			width,
 			height,
-
-			// NB: technically this doesn't do anything since logs can only be tied
-			// to a toplevel vertex, but this seems like the right semantics if/when
-			// that changes
-			j.showTerm,
 		)
 	}
 
-	if j.showTerm {
+	if j.vertex != nil && j.vertex.termBytes > 0 {
 		term := j.vertex.term
 		term.Resize(termHeight, width-termPad)
-
-		lines, maxWidth := renderTerm(disp.c, disp.ui, term)
-
-		lineCount += lines
-
-		if maxWidth > disp.maxWidth {
-			disp.maxWidth = maxWidth
-		}
-
-		j.vertex.termCount++
-		j.showTerm = false
+		renderTerm(w, disp.ui, term)
 	}
-
-	return lineCount
 }
 
-func renderTerm(w io.Writer, ui Components, term *vt100.VT100) (int, int) {
+func renderTerm(w io.Writer, ui Components, term *vt100.VT100) {
 	used := term.UsedHeight()
 
-	lineCount := 0
-	maxWidth := 0
 	for row, l := range term.Content {
 		if row+1 > used {
 			break
@@ -648,15 +645,7 @@ func renderTerm(w io.Writer, ui Components, term *vt100.VT100) (int, int) {
 
 		out := fmt.Sprintf(ui.ConsoleLogFormat, line)
 		fmt.Fprintf(w, "%s\n", out)
-		lineCount++
-
-		width := nonAnsiLen(out)
-		if width > maxWidth {
-			maxWidth = width
-		}
 	}
-
-	return lineCount, maxWidth
 }
 
 func renderFormat(f vt100.Format) string {
@@ -712,50 +701,6 @@ func renderFormat(f vt100.Format) string {
 	}
 
 	return b.ANSI.String()
-}
-
-func wrapHeight(j []*job, limit int) []*job {
-	if limit < 0 {
-		return nil
-	}
-	var wrapped []*job
-	wrapped = append(wrapped, j...)
-	if len(j) > limit {
-		wrapped = wrapped[len(j)-limit:]
-
-		// wrap things around if incomplete jobs were cut
-		var invisible []*job
-		for _, j := range j[:len(j)-limit] {
-			if j.completedTime == nil {
-				invisible = append(invisible, j)
-			}
-		}
-
-		if l := len(invisible); l > 0 {
-			rewrapped := make([]*job, 0, len(wrapped))
-			for _, j := range wrapped {
-				if j.completedTime == nil || l <= 0 {
-					rewrapped = append(rewrapped, j)
-				}
-				l--
-			}
-			freespace := len(wrapped) - len(rewrapped)
-			wrapped = append(invisible[len(invisible)-freespace:], rewrapped...)
-		}
-	}
-	return wrapped
-}
-
-func proxy(ch chan<- *graph.SolveStatus, r Reader) {
-	for {
-		status, ok := r.ReadStatus()
-		if !ok {
-			close(ch)
-			return
-		}
-
-		ch <- status
-	}
 }
 
 func nonAnsiLen(s string) int {

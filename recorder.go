@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/console"
 	"github.com/jonboulle/clockwork"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/graph"
@@ -52,11 +51,11 @@ func (recorder *Recorder) Record(status *graph.SolveStatus) {
 	recorder.w.WriteStatus(status)
 }
 
-func (recorder *Recorder) Display(ctx context.Context, ui ui.Components, c console.Console, w io.Writer, r ui.Reader) {
+func (recorder *Recorder) Display(interrupt context.CancelFunc, ui ui.Components, w io.Writer, r ui.Reader, tui bool) {
 	recorder.displaying.Add(1)
 	go func() {
 		defer recorder.displaying.Done()
-		ui.DisplaySolveStatus(ctx, c, w, r)
+		ui.DisplaySolveStatus(interrupt, w, r, tui)
 	}()
 }
 
