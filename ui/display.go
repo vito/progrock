@@ -99,6 +99,28 @@ func (model *Model) Ready() <-chan struct{} {
 	return model.ready
 }
 
+const headerHeight = 0
+const footerHeight = 1
+const chromeHeight = headerHeight + footerHeight
+
+func (m *Model) SetWindowSize(w, h int) {
+	if m.hasViewport {
+		m.viewport.Width = w
+		m.viewport.Height = h - chromeHeight
+	} else {
+		m.viewport = viewport.Model{
+			Width:  w,
+			Height: h - chromeHeight,
+		}
+
+		m.hasViewport = true
+	}
+}
+
+func (m *Model) StatusUpdate(status *graph.SolveStatus) {
+	m.t.update(status, m.vtermHeight(), m.viewportWidth())
+}
+
 func (model *Model) Print(w io.Writer) {
 	if model.tui {
 		model.disp.print(
@@ -130,10 +152,6 @@ func tick() tea.Cmd {
 func (tui *Model) Init() tea.Cmd {
 	return tick()
 }
-
-const headerHeight = 0
-const footerHeight = 1
-const chromeHeight = headerHeight + footerHeight
 
 func (m *Model) viewportWidth() int {
 	width := m.viewport.Width
@@ -179,20 +197,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
-		if m.hasViewport {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - chromeHeight
-		} else {
-			m.viewport = viewport.Model{
-				Width:  msg.Width,
-				Height: msg.Height - chromeHeight,
-			}
-
-			m.hasViewport = true
-		}
+		m.SetWindowSize(msg.Width, msg.Height)
 
 	case statusMsg:
-		m.t.update(msg, m.vtermHeight(), m.viewportWidth())
+		m.StatusUpdate(msg)
 
 	case eofMsg:
 		return m, tea.Quit
