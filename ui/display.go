@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -35,7 +36,7 @@ func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Write
 	if tui {
 		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	} else {
-		opts = append(opts, tea.WithoutRenderer())
+		opts = append(opts, tea.WithInput(nil), tea.WithoutRenderer())
 	}
 
 	prog := tea.NewProgram(model, opts...)
@@ -86,8 +87,12 @@ type Model struct {
 
 	interrupt func()
 
-	ready    chan struct{}
-	viewport viewport.Model
+	// needed to prevent race condition between Start and SendMessage
+	ready     chan struct{}
+	readyOnce sync.Once
+
+	hasViewport bool
+	viewport    viewport.Model
 }
 
 func (model *Model) Ready() <-chan struct{} {
@@ -99,9 +104,9 @@ func (model *Model) Print(w io.Writer) {
 		model.disp.print(
 			w,
 			model.t.displayInfo(),
-			termHeight,
-			model.viewport.Width,
-			model.viewport.Height,
+			model.vtermHeight(),
+			model.viewportWidth(),
+			model.viewportHeight(),
 		)
 	} else {
 		model.printer.print(model.t)
@@ -129,15 +134,39 @@ func (tui *Model) Init() tea.Cmd {
 const headerHeight = 0
 const footerHeight = 1
 const chromeHeight = headerHeight + footerHeight
-const termHeight = 12
+
+func (m *Model) viewportWidth() int {
+	width := m.viewport.Width
+	if width == 0 {
+		width = 80
+	}
+
+	return width
+}
+
+func (m *Model) viewportHeight() int {
+	height := m.viewport.Height
+	if height == 0 {
+		height = 24
+	}
+
+	return height
+}
+
+func (m *Model) vtermHeight() int {
+	return m.viewportHeight() / 3
+}
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.readyOnce.Do(func() {
+		close(m.ready)
+	})
+
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
 	)
 
-dance:
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if k := msg.String(); k == "ctrl+c" || k == "q" || k == "esc" {
@@ -146,35 +175,32 @@ dance:
 		}
 
 	case tea.WindowSizeMsg:
-		select {
-		case <-m.ready:
+		if !m.tui {
+			break
+		}
+
+		if m.hasViewport {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - chromeHeight
-		default:
+		} else {
 			m.viewport = viewport.Model{
 				Width:  msg.Width,
 				Height: msg.Height - chromeHeight,
 			}
 
-			close(m.ready)
+			m.hasViewport = true
 		}
 
 	case statusMsg:
-		m.t.update(msg, termHeight, m.viewport.Width)
+		m.t.update(msg, m.vtermHeight(), m.viewportWidth())
 
 	case eofMsg:
 		return m, tea.Quit
 
 	case tickMsg:
-		select {
-		case <-m.ready:
-		default:
-			break dance
-		}
-
-		if m.tui {
+		if m.tui && m.hasViewport {
 			buf := new(bytes.Buffer)
-			m.disp.print(buf, m.t.displayInfo(), termHeight, m.viewport.Width, m.viewport.Height)
+			m.disp.print(buf, m.t.displayInfo(), m.vtermHeight(), m.viewportWidth(), m.viewportHeight())
 
 			atBottom := m.viewport.AtBottom()
 			m.viewport.SetContent(buf.String())
