@@ -130,11 +130,11 @@ func (model *Model) Print(w io.Writer) {
 			model.viewportWidth(),
 			model.viewportHeight(),
 		)
+
+		model.t.printErrorLogs(w)
 	} else {
 		model.printer.print(model.t)
 	}
-
-	model.t.printErrorLogs(w)
 }
 
 type statusMsg *graph.SolveStatus
