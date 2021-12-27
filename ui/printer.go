@@ -173,9 +173,14 @@ func sortCompleted(t *trace, m map[digest.Digest]struct{}) []digest.Digest {
 	for k := range m {
 		out = append(out, k)
 	}
+
 	sort.Slice(out, func(i, j int) bool {
-		return t.byDigest[out[i]].Completed.Before(*t.byDigest[out[j]].Completed)
+		iv := t.byDigest[out[i]]
+		jv := t.byDigest[out[j]]
+		return iv.Completed.Before(*jv.Completed) ||
+			iv.index < jv.index
 	})
+
 	return out
 }
 
