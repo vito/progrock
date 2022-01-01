@@ -496,10 +496,6 @@ func (t *trace) displayInfo() (d displayInfo) {
 	}
 
 	for _, v := range t.vertexes {
-		if strings.Contains(v.Name, HideTag) {
-			return
-		}
-
 		if v.jobCached {
 			d.jobs = append(d.jobs, v.jobs...)
 			continue
@@ -626,16 +622,17 @@ func (disp *display) printJob(w io.Writer, j *job, d displayInfo, termHeight, wi
 		return
 	}
 
-	dt := endTime.Sub(*j.startTime).Truncate(time.Millisecond)
-
-	dur := duration(disp.ui, dt, j.completedTime != nil)
+	if strings.Contains(j.name, HideTag) {
+		return
+	}
 
 	out := j.name
 	if j.status != "" {
 		out += " " + j.status
 	}
 
-	out += " " + dur
+	dt := endTime.Sub(*j.startTime).Truncate(time.Millisecond)
+	out += " " + duration(disp.ui, dt, j.completedTime != nil)
 
 	fmt.Fprintf(w, "%s\n", out)
 
