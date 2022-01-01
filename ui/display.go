@@ -496,6 +496,10 @@ func (t *trace) displayInfo() (d displayInfo) {
 	}
 
 	for _, v := range t.vertexes {
+		if strings.Contains(v.Name, HideTag) {
+			return
+		}
+
 		if v.jobCached {
 			d.jobs = append(d.jobs, v.jobs...)
 			continue
