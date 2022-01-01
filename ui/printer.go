@@ -20,6 +20,9 @@ const minProgressDelta = 0.05 // %
 
 const logsBufferSize = 10
 
+// HideTag is string that will hide a vertex when placed in its name.
+const HideTag = "[hide]"
+
 type lastStatus struct {
 	Current   int64
 	Timestamp time.Time
@@ -40,6 +43,10 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 
 	v, ok := t.byDigest[dgst]
 	if !ok {
+		return
+	}
+
+	if strings.Contains(v.Name, HideTag) {
 		return
 	}
 
