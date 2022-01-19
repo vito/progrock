@@ -8,7 +8,6 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -42,8 +41,6 @@ func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Write
 	prog := tea.NewProgram(model, opts...)
 
 	go func() {
-		<-model.Ready()
-
 		for {
 			status, ok := r.ReadStatus()
 			if ok {
@@ -73,8 +70,6 @@ func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool
 		printer: &textMux{w: w, ui: ui},
 
 		interrupt: interrupt,
-
-		ready: make(chan struct{}),
 	}
 }
 
@@ -87,16 +82,8 @@ type Model struct {
 
 	interrupt func()
 
-	// needed to prevent race condition between Start and SendMessage
-	ready     chan struct{}
-	readyOnce sync.Once
-
 	hasViewport bool
 	viewport    viewport.Model
-}
-
-func (model *Model) Ready() <-chan struct{} {
-	return model.ready
 }
 
 const headerHeight = 0
@@ -176,10 +163,6 @@ func (m *Model) vtermHeight() int {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	m.readyOnce.Do(func() {
-		close(m.ready)
-	})
-
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
