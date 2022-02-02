@@ -442,26 +442,37 @@ func duration(ui Components, dt time.Duration, completed bool) string {
 
 func (t *trace) printErrorLogs(f io.Writer) {
 	for _, v := range t.vertexes {
-		if v.Error != "" && !strings.HasSuffix(v.Error, context.Canceled.Error()) {
-			fmt.Fprintf(f, t.ui.ErrorHeader, v.Name)
-			// tty keeps original logs
-			for _, l := range v.logs {
-				f.Write(l)
-				fmt.Fprintln(f)
-			}
-			// printer keeps last logs buffer
-			if v.logsBuffer != nil {
-				for i := 0; i < v.logsBuffer.Len(); i++ {
-					if v.logsBuffer.Value != nil {
-						fmt.Fprintln(f, string(v.logsBuffer.Value.([]byte)))
-					}
-					v.logsBuffer = v.logsBuffer.Next()
-				}
-			}
+		if v.Error == "" {
+			continue
+		}
 
-			if t.ui.ErrorFooter != "" {
-				fmt.Fprintf(f, t.ui.ErrorFooter, v.Name)
+		if strings.HasSuffix(v.Error, context.Canceled.Error()) {
+			continue
+		}
+
+		if strings.Contains(v.Name, HideTag) {
+			continue
+		}
+
+		fmt.Fprintf(f, t.ui.ErrorHeader, v.Name)
+
+		// tty keeps original logs
+		for _, l := range v.logs {
+			f.Write(l)
+			fmt.Fprintln(f)
+		}
+		// printer keeps last logs buffer
+		if v.logsBuffer != nil {
+			for i := 0; i < v.logsBuffer.Len(); i++ {
+				if v.logsBuffer.Value != nil {
+					fmt.Fprintln(f, string(v.logsBuffer.Value.([]byte)))
+				}
+				v.logsBuffer = v.logsBuffer.Next()
 			}
+		}
+
+		if t.ui.ErrorFooter != "" {
+			fmt.Fprintf(f, t.ui.ErrorFooter, v.Name)
 		}
 	}
 }
