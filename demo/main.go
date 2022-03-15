@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
-	"github.com/containerd/console"
 	"github.com/vito/progrock"
 	"github.com/vito/progrock/ui"
 )
@@ -15,7 +15,10 @@ func main() {
 	r, w := progrock.Pipe()
 	rec := progrock.NewRecorder(w)
 
-	rec.Display(context.Background(), ui.Default, console.Current(), os.Stderr, r)
+	_, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	rec.Display(stop, ui.Default, os.Stderr, r, false)
 	defer rec.Stop()
 
 	failed := rec.Vertex("failed vertex", "failed vertex")
