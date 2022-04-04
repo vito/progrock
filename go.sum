@@ -51,6 +51,8 @@ github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea h1:SXhTLE6pb6eld/
 github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea/go.mod h1:WPnis/6cRcDZSUvVmezrxJPkiO87ThFYsoUiMwWNDJk=
 github.com/vito/vt100 v0.0.0-20210912004403-d61d7faf769e h1:6ceGlOqriSPotxm4AXr88yNsu/5T7nyMVsbPTA/dbLE=
 github.com/vito/vt100 v0.0.0-20210912004403-d61d7faf769e/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
+github.com/vito/vt100 v0.0.0-20220404031632-f6fec6525a40 h1:U/PMbGTR1wEVhM/mIj2/4DwveirUc1lbpTrjb4FTe3U=
+github.com/vito/vt100 v0.0.0-20220404031632-f6fec6525a40/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
 golang.org/x/sys v0.0.0-20200116001909-b77594299b42/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20200916030750-2334cc1a136f/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=

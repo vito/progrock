@@ -684,46 +684,88 @@ func renderFormat(f vt100.Format) string {
 
 	b := aec.EmptyBuilder
 
-	switch f.Fg {
-	case vt100.Black:
-		b = b.BlackF()
-	case vt100.Red:
-		b = b.RedF()
-	case vt100.Green:
-		b = b.GreenF()
-	case vt100.Yellow:
-		b = b.YellowF()
-	case vt100.Blue:
-		b = b.BlueF()
-	case vt100.Magenta:
-		b = b.MagentaF()
-	case vt100.Cyan:
-		b = b.CyanF()
-	case vt100.White:
-		b = b.WhiteF()
+	if f.FgBright {
+		switch f.Fg {
+		case vt100.Black:
+			b = b.LightBlackF()
+		case vt100.Red:
+			b = b.LightRedF()
+		case vt100.Green:
+			b = b.LightGreenF()
+		case vt100.Yellow:
+			b = b.LightYellowF()
+		case vt100.Blue:
+			b = b.LightBlueF()
+		case vt100.Magenta:
+			b = b.LightMagentaF()
+		case vt100.Cyan:
+			b = b.LightCyanF()
+		case vt100.White:
+			b = b.LightWhiteF()
+		}
+	} else {
+		switch f.Fg {
+		case vt100.Black:
+			b = b.BlackF()
+		case vt100.Red:
+			b = b.RedF()
+		case vt100.Green:
+			b = b.GreenF()
+		case vt100.Yellow:
+			b = b.YellowF()
+		case vt100.Blue:
+			b = b.BlueF()
+		case vt100.Magenta:
+			b = b.MagentaF()
+		case vt100.Cyan:
+			b = b.CyanF()
+		case vt100.White:
+			b = b.WhiteF()
+		}
 	}
 
-	switch f.Bg {
-	case vt100.Black:
-		b = b.BlackB()
-	case vt100.Red:
-		b = b.RedB()
-	case vt100.Green:
-		b = b.GreenB()
-	case vt100.Yellow:
-		b = b.YellowB()
-	case vt100.Blue:
-		b = b.BlueB()
-	case vt100.Magenta:
-		b = b.MagentaB()
-	case vt100.Cyan:
-		b = b.CyanB()
-	case vt100.White:
-		b = b.WhiteB()
+	if f.BgBright {
+		switch f.Bg {
+		case vt100.Black:
+			b = b.LightBlackB()
+		case vt100.Red:
+			b = b.LightRedB()
+		case vt100.Green:
+			b = b.LightGreenB()
+		case vt100.Yellow:
+			b = b.LightYellowB()
+		case vt100.Blue:
+			b = b.LightBlueB()
+		case vt100.Magenta:
+			b = b.LightMagentaB()
+		case vt100.Cyan:
+			b = b.LightCyanB()
+		case vt100.White:
+			b = b.LightWhiteB()
+		}
+	} else {
+		switch f.Bg {
+		case vt100.Black:
+			b = b.BlackB()
+		case vt100.Red:
+			b = b.RedB()
+		case vt100.Green:
+			b = b.GreenB()
+		case vt100.Yellow:
+			b = b.YellowB()
+		case vt100.Blue:
+			b = b.BlueB()
+		case vt100.Magenta:
+			b = b.MagentaB()
+		case vt100.Cyan:
+			b = b.CyanB()
+		case vt100.White:
+			b = b.WhiteB()
+		}
 	}
 
 	switch f.Intensity {
-	case vt100.Bright:
+	case vt100.Bold:
 		b = b.Bold()
 	case vt100.Dim:
 		b = b.Faint()

@@ -10,7 +10,7 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/vito/vt100 v0.0.0-20210912004403-d61d7faf769e
+	github.com/vito/vt100 v0.0.0-20220404031632-f6fec6525a40
 )
 
 require (
