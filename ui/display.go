@@ -412,14 +412,12 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 	sort.Slice(t.vertexes, func(i, j int) bool {
 		iv := t.vertexes[i]
 		jv := t.vertexes[j]
-		if iv.Completed != nil && jv.Completed != nil {
-			return !iv.Completed.After(*jv.Completed)
-		} else if iv.Completed != nil {
+		if iv.Completed != nil && jv.Completed == nil {
 			return true
-		} else if jv.Completed != nil {
+		} else if iv.Completed == nil && jv.Completed != nil {
 			return false
 		} else {
-			return false
+			return iv.index < jv.index
 		}
 	})
 }
