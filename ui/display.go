@@ -216,7 +216,7 @@ func (m *Model) View() string {
 	return fmt.Sprintf("%s\n%s", status, m.viewport.View())
 }
 
-const termPad = 4
+const termPad = 3
 
 type displayInfo struct {
 	startTime      time.Time

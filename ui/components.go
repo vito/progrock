@@ -39,13 +39,13 @@ var Default = Components{
 	ConsoleRunning: "Building %s (%d/%d)",
 	ConsoleDone:    "Building %s (%d/%d) " + aec.GreenF.Apply("done"),
 
-	ConsoleLogFormat:                   "  " + aec.LightBlackF.Apply("│") + " %s",
+	ConsoleLogFormat:                   " " + aec.LightBlackF.Apply("▕") + " %s",
 	ConsoleVertexRunning:               aec.YellowF.Apply("=> %s"),
 	ConsoleVertexCanceled:              aec.YellowF.Apply("=> %s CANCELED"),
 	ConsoleVertexErrored:               aec.RedF.Apply("=> %s ERROR"),
 	ConsoleVertexCached:                aec.BlueF.Apply("=> %s CACHED"),
 	ConsoleVertexDone:                  aec.GreenF.Apply("=> %s"),
-	ConsoleVertexStatus:                "--> %s",
+	ConsoleVertexStatus:                "-> %s",
 	ConsoleVertexStatusProgressBound:   "%.2f / %.2f",
 	ConsoleVertexStatusProgressUnbound: "%.2f",
 
