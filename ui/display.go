@@ -23,7 +23,6 @@ import (
 	"github.com/tonistiigi/units"
 	"github.com/vito/progrock/graph"
 	"github.com/vito/vt100"
-	"github.com/zmb3/spotify/v2"
 )
 
 type Reader interface {
@@ -64,6 +63,8 @@ func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Write
 
 func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool) *Model {
 	return &Model{
+		ui: ui,
+
 		t: newTrace(ui, tui),
 
 		tui:     tui,
@@ -79,22 +80,13 @@ func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool
 		maxHeight: 24,
 		viewport:  viewport.New(80, 24),
 
-		// sane default rave: 123 bpm
-		rave: &Rave{
-			Start: time.Now(),
-			Marks: []spotify.Marker{
-				{
-					Start:    0,
-					Duration: 0.488,
-				},
-			},
-		},
-
 		help: help.New(),
 	}
 }
 
 type Model struct {
+	ui Components
+
 	t *trace
 
 	tui     bool
@@ -109,11 +101,9 @@ type Model struct {
 	contentHeight int
 
 	// UI refresh rate
-	fps int
+	fps float64
 
 	finished bool
-
-	rave *Rave
 
 	help help.Model
 }
@@ -140,14 +130,17 @@ type eofMsg struct{}
 
 type tickMsg time.Time
 
-func tick(fps int) tea.Cmd {
-	return tea.Tick(time.Second/time.Duration(fps), func(t time.Time) tea.Msg {
+func tick(fps float64) tea.Cmd {
+	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
 func (tui *Model) Init() tea.Cmd {
-	return tick(tui.fps)
+	return tea.Batch(
+		tick(tui.fps),
+		tui.ui.Spinner.Init(),
+	)
 }
 
 func (m *Model) viewportWidth() int {
@@ -192,9 +185,11 @@ type beatMsg time.Time
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Rave key.Binding
-	Help key.Binding
-	Quit key.Binding
+	Rave    key.Binding
+	EndRave key.Binding
+	Debug   key.Binding
+	Help    key.Binding
+	Quit    key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the mini help view. It's part
@@ -207,8 +202,8 @@ func (k keyMap) ShortHelp() []key.Binding {
 // key.Map interface.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Help, k.Quit},
-		{k.Rave},
+		{k.Help, k.Quit, k.Debug},
+		{k.Rave, k.EndRave},
 	}
 }
 
@@ -216,6 +211,15 @@ var keys = keyMap{
 	Rave: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "rave"),
+	),
+	EndRave: key.NewBinding(
+		key.WithKeys("R"),
+		key.WithHelp("R", "end rave"),
+	),
+	// NB: this isn't rave-specific; one key to debug them all
+	Debug: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "show debug info"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
@@ -232,8 +236,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, keys.Rave):
-			cmd = m.rave.Sync()
+		case key.Matches(msg, keys.Rave) ||
+			key.Matches(msg, keys.EndRave) ||
+			key.Matches(msg, keys.Debug):
+			m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
 		case key.Matches(msg, keys.Quit):
 			// don't tea.Quit, let the UI finish
 			m.interrupt()
@@ -301,23 +307,11 @@ func (m *Model) View() string {
 		return buf.String()
 	}
 
-	footerLines := []string{
-		lipgloss.JoinHorizontal(
-			lipgloss.Left,
-			m.rave.View(),
-			" ",
-			m.disp.status(m.t.displayInfo()),
-		),
-	}
-
-	rave := m.rave.Details(time.Now())
-	if rave != "" {
-		footerLines = append(footerLines, rave)
-	}
-
-	footer := lipgloss.JoinVertical(
+	footer := lipgloss.JoinHorizontal(
 		lipgloss.Left,
-		footerLines...,
+		m.ui.Spinner.View(),
+		" ",
+		m.disp.status(m.t.displayInfo()),
 	)
 
 	chromeHeight := lipgloss.Height(footer)

@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/adrg/xdg"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/morikuni/aec"
 	"github.com/pkg/browser"
@@ -19,14 +18,24 @@ import (
 )
 
 type Rave struct {
-	Start time.Time
-	Marks []spotify.Marker
+	// Show extra details useful for debugging a desynced rave.
+	ShowDetails bool
+
+	// Auth configuration for syncing with Spotify.
+	SpotifyAuth *spotifyauth.Authenticator
+
+	// File path where tokens will be cached.
+	SpotifyTokenPath string
+
+	// the sequence to visualize
+	start time.Time
+	marks []spotify.Marker
 
 	// syncing along to music
 	track *spotify.FullTrack
 
 	// refresh rate
-	fps int
+	fps float64
 
 	// current position in the marks sequence
 	pos int
@@ -41,14 +50,59 @@ var colors = []aec.ANSI{
 	aec.CyanF,
 }
 
+// DefaultBPM is a sane default of 123 beats per minute.
+const DefaultBPM = 123
+const FramesPerBeat = 10
+
+func NewRave() *Rave {
+	return &Rave{}
+}
+
+func (rave *Rave) Reset() {
+	rave.start = time.Now()
+	rave.marks = []spotify.Marker{
+		{
+			Start:    0,
+			Duration: 60.0 / DefaultBPM,
+		},
+	}
+	rave.fps = (DefaultBPM / 60.0) * FramesPerBeat
+}
+
+type authed struct {
+	tok *oauth2.Token
+}
+
 func (model *Rave) Init() tea.Cmd {
-	return tick(model.fps)
+	ctx := context.TODO()
+
+	cmds := []tea.Cmd{}
+
+	client, err := model.existingAuth(ctx)
+	if err == nil {
+		cmds = append(cmds, model.sync(ctx, client))
+	} else {
+		cmds = append(cmds, tea.Printf("existing auth: %s", err))
+	}
+
+	cmds = append(cmds, tick(model.fps))
+
+	return tea.Batch(cmds...)
 }
 
 func (model *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
 	case tickMsg:
 		return model, tick(model.fps)
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, keys.Rave):
+			return model, model.Sync()
+		case key.Matches(msg, keys.EndRave):
+			return model, model.Desync()
+		case key.Matches(msg, keys.Debug):
+			model.ShowDetails = !model.ShowDetails
+		}
 	}
 
 	return model, nil
@@ -59,31 +113,31 @@ func (model *Rave) View() string {
 
 	pos, pct := model.Progress(now)
 
-	var symbol string
+	var out string
+
 	switch {
 	case pos == -1:
 		// no beat
-		symbol = " "
+		out += " "
 	case pct > 0.6:
 		// faded out
-		symbol = " "
+		out += " "
 	case pct > 0.5:
-		symbol = "░"
+		out += "░"
 	case pct > 0.4:
-		symbol = "▒"
+		out += "▒"
 	case pct > 0.3:
-		symbol = "▓"
+		out += "▓"
 	default:
-		symbol = "█"
+		out += "█"
 	}
 
-	symbol = strings.Repeat(symbol, 2)
+	if model.track != nil && pos != -1 {
+		out = colors[pos%len(colors)].Apply(out)
+	}
 
-	var out string
-	if model.track == nil || pos == -1 {
-		out = symbol
-	} else {
-		out = colors[pos%len(colors)].Apply(symbol)
+	if model.ShowDetails {
+		out += model.Details(now)
 	}
 
 	return out
@@ -94,13 +148,14 @@ func (model *Rave) Details(now time.Time) string {
 		return ""
 	}
 
-	pos, pct := model.Progress(now)
+	pos, _ := model.Progress(now)
 
 	var out string
+
 	if pos%2 == 0 {
-		out += "♫♪ "
+		out += "♫ "
 	} else {
-		out += "♪♫ "
+		out += "♪ "
 	}
 
 	for i, artist := range model.track.Artists {
@@ -113,17 +168,16 @@ func (model *Rave) Details(now time.Time) string {
 	out += " - " + model.track.Name
 
 	if pos != -1 {
-		mark := model.Marks[pos]
+		mark := model.marks[pos]
 
 		dur := time.Duration(mark.Duration * float64(time.Second))
 		bpm := time.Minute / dur
 
 		out += " "
 		out += fmt.Sprintf(
-			"♪ %d/%d %03d%% %dbpm %dfps",
+			"♪ %d/%d %dbpm %.1ffps",
 			pos+1,
-			len(model.Marks),
-			int(pct*100),
+			len(model.marks),
 			bpm,
 			model.fps,
 		)
@@ -135,10 +189,10 @@ func (model *Rave) Details(now time.Time) string {
 }
 
 func (sched *Rave) Progress(now time.Time) (int, float64) {
-	for i := int(sched.pos); i < len(sched.Marks); i++ {
-		mark := sched.Marks[i]
+	for i := int(sched.pos); i < len(sched.marks); i++ {
+		mark := sched.marks[i]
 
-		start := sched.Start.Add(time.Duration(mark.Start * float64(time.Second)))
+		start := sched.start.Add(time.Duration(mark.Start * float64(time.Second)))
 
 		dur := time.Duration(mark.Duration * float64(time.Second))
 
@@ -156,7 +210,7 @@ func (sched *Rave) Progress(now time.Time) (int, float64) {
 	}
 
 	// reached the end of the beats; replay
-	sched.Start = now
+	sched.start = now
 	sched.pos = 0
 
 	return -1, 0
@@ -169,34 +223,8 @@ func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 		spotifyauth.WithScopes(spotifyauth.ScopeUserReadCurrentlyPlaying),
 	)
 
-	tokenPath, err := xdg.ConfigFile("bass/spotify-token")
-	if err != nil {
-		return nil, err
-	}
-
-	var tok *oauth2.Token
-	if content, err := os.ReadFile(tokenPath); err == nil {
-		err := json.Unmarshal(content, &tok)
-		if err != nil {
-			return nil, err
-		}
-
-		client := spotify.New(auth.Client(ctx, tok))
-
-		// check if the token is still valid and/or refresh
-		refresh, err := client.Token()
-		if err != nil {
-			return nil, err
-		}
-
-		// save new token if refreshed
-		if refresh.AccessToken != tok.AccessToken {
-			err = m.saveToken(tokenPath, refresh)
-			if err != nil {
-				return nil, err
-			}
-		}
-
+	if client, err := m.existingAuth(ctx); err == nil {
+		// user has authenticated previously, no need for auth flow
 		return client, nil
 	}
 
@@ -230,7 +258,7 @@ func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 			return
 		}
 
-		err = m.saveToken(tokenPath, tok)
+		err = m.saveToken(tok)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to save token: %s", err), http.StatusInternalServerError)
 			return
@@ -263,6 +291,40 @@ func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 	}
 }
 
+func (m *Rave) existingAuth(ctx context.Context) (*spotify.Client, error) {
+	if m.SpotifyAuth == nil || m.SpotifyTokenPath == "" {
+		return nil, fmt.Errorf("no auth configured")
+	}
+
+	content, err := os.ReadFile(m.SpotifyTokenPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var tok *oauth2.Token
+	if err := json.Unmarshal(content, &tok); err != nil {
+		return nil, err
+	}
+
+	client := spotify.New(m.SpotifyAuth.Client(ctx, tok))
+
+	// check if the token is still valid and/or refresh
+	refresh, err := client.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	// save new token if refreshed
+	if refresh.AccessToken != tok.AccessToken {
+		err = m.saveToken(refresh)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return client, nil
+}
+
 func (m *Rave) Sync() tea.Cmd {
 	ctx := context.TODO()
 
@@ -271,6 +333,20 @@ func (m *Rave) Sync() tea.Cmd {
 		return tea.Println("failed to authenticate:", err)
 	}
 
+	return m.sync(ctx, client)
+}
+
+func (m *Rave) Desync() tea.Cmd {
+	if m.SpotifyTokenPath != "" {
+		_ = os.Remove(m.SpotifyTokenPath)
+	}
+
+	m.track = nil
+
+	return nil
+}
+
+func (m *Rave) sync(ctx context.Context, client *spotify.Client) tea.Cmd {
 	playing, err := client.PlayerCurrentlyPlaying(ctx)
 	if err != nil {
 		return tea.Printf("failed to get currently playing: %s", err)
@@ -286,7 +362,7 @@ func (m *Rave) Sync() tea.Cmd {
 	}
 
 	// update the new timing
-	m.Marks = analysis.Beats
+	m.marks = analysis.Beats
 
 	// the Spotify API is strange: Timestamp doesn't do what it's documented to
 	// do. the docs say it returns the server timestamp, but that's not at all
@@ -299,13 +375,13 @@ func (m *Rave) Sync() tea.Cmd {
 	//
 	// since it's going to be wrong half the time no matter what, let's just
 	// use the timestamp value directly. :(
-	m.Start = time.UnixMilli(playing.Timestamp)
+	m.start = time.UnixMilli(playing.Timestamp)
 
 	// update the FPS appropriately for the track's average tempo
 	bpm := analysis.Track.Tempo
 	bps := bpm / 60.0
 	fps := bps * 10 // each beat's frames are spread across tenths of a second
-	m.fps = int(fps)
+	m.fps = fps
 
 	// rewind to the beginning in case the song changed
 	//
@@ -319,13 +395,17 @@ func (m *Rave) Sync() tea.Cmd {
 	return nil
 }
 
-func (m *Rave) saveToken(tokenPath string, tok *oauth2.Token) error {
+func (m *Rave) saveToken(tok *oauth2.Token) error {
+	if m.SpotifyTokenPath == "" {
+		return nil
+	}
+
 	payload, err := json.Marshal(tok)
 	if err != nil {
 		return err
 	}
 
-	_ = os.WriteFile(tokenPath, payload, 0600)
+	_ = os.WriteFile(m.SpotifyTokenPath, payload, 0600)
 	if err != nil {
 		return err
 	}

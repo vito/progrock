@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/morikuni/aec"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/morikuni/aec"
+)
 
 type Components struct {
 	ConsoleRunning, ConsoleDone        string
@@ -31,6 +34,8 @@ type Components struct {
 
 	ErrorHeader, ErrorFooter string
 	ErrorLogFormat           string
+
+	Spinner tea.Model
 }
 
 var vertexID = aec.MagentaF.Apply("%d:")
@@ -67,4 +72,6 @@ var Default = Components{
 	ErrorLogFormat: "  " + aec.YellowF.Apply("!") + " %[2]s %[3]s",
 	ErrorHeader:    aec.YellowF.Apply("!!!") + " " + aec.RedF.Apply("%s") + "\n",
 	ErrorFooter:    "",
+
+	Spinner: NewRave(),
 }
