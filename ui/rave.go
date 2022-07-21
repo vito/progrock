@@ -133,7 +133,7 @@ func (rave *Rave) Init() tea.Cmd {
 func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case syncedMsg:
-		if msg.playing != nil {
+		if msg.playing == nil {
 			// nothing playing
 			return rave, nil
 		}
