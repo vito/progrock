@@ -235,11 +235,11 @@ var keys = keyMap{
 	),
 	ForwardRave: key.NewBinding(
 		key.WithKeys("+"),
-		key.WithHelp("+", "rave forward"),
+		key.WithHelp("+", "seek forward"),
 	),
 	BackwardRave: key.NewBinding(
 		key.WithKeys("-"),
-		key.WithHelp("-", "rave backward"),
+		key.WithHelp("-", "seek backward"),
 	),
 }
 

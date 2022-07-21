@@ -23,7 +23,7 @@ type Rave struct {
 	// Show extra details useful for debugging a desynced rave.
 	ShowDetails bool
 
-	// Auth configuration for syncing with Spotify.
+	// Configuration for syncing with Spotify.
 	SpotifyAuth *spotifyauth.Authenticator
 
 	// File path where tokens will be cached.
@@ -93,12 +93,12 @@ func NewRave() *Rave {
 		Frames: MeterFrames,
 	}
 
-	r.Reset()
+	r.reset()
 
 	return r
 }
 
-func (rave *Rave) Reset() {
+func (rave *Rave) reset() {
 	rave.start = time.Now()
 	rave.marks = []spotify.Marker{
 		{
@@ -107,7 +107,6 @@ func (rave *Rave) Reset() {
 		},
 	}
 	rave.track = nil
-	rave.fps = (DefaultBPM / 60.0) * FramesPerBeat
 	rave.pos = 0
 }
 
@@ -119,6 +118,7 @@ func (rave *Rave) Init() tea.Cmd {
 	ctx := context.TODO()
 	return tea.Batch(
 		tick(rave.fps),
+		rave.setFPS(DefaultBPM),
 		func() tea.Msg {
 			client, err := rave.existingAuth(ctx)
 			if err == nil {
@@ -149,15 +149,6 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// use the timestamp value directly. :(
 		rave.start = time.UnixMilli(msg.playing.Timestamp)
 
-		// update the FPS appropriately for the track's average tempo
-		bpm := msg.analysis.Track.Tempo
-		bps := bpm / 60.0
-		fps := bps * FramesPerBeat
-		fps *= 10 // decrease chance of missing a frame due to timing
-		fps = 165 // TODO: my monitor
-		fps *= 2
-		rave.fps = fps
-
 		// rewind to the beginning in case the song changed
 		//
 		// NB: this doesn't actually reset the sequence shown to the user, it just
@@ -167,9 +158,8 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// save the playing track to enable fancier UI + music status
 		rave.track = msg.playing.Item
 
-		return rave, tea.Cmd(func() tea.Msg {
-			return setFpsMsg(fps)
-		})
+		// update the FPS appropriately for the track's average tempo
+		return rave, rave.setFPS(msg.analysis.Track.Tempo)
 
 	case syncErrMsg:
 		return rave, tea.Printf("sync error: %s", msg.err)
@@ -180,7 +170,7 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return rave, tick(rave.fps)
 	case setFpsMsg:
 		rave.fps = float64(msg)
-		return rave, tea.Printf("rave set fps: %.1f", rave.fps)
+		return rave, nil
 
 	// NB: these are captured and forwarded at the outer level.
 	case tea.KeyMsg:
@@ -190,11 +180,11 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.EndRave):
 			return rave, rave.Desync()
 		case key.Matches(msg, keys.ForwardRave):
-			rave.start = rave.start.Add(100 * time.Millisecond)
+			rave.start = rave.start.Add(-100 * time.Millisecond)
 			rave.pos = 0 // reset and recalculate
 			return rave, nil
 		case key.Matches(msg, keys.BackwardRave):
-			rave.start = rave.start.Add(-100 * time.Millisecond)
+			rave.start = rave.start.Add(100 * time.Millisecond)
 			rave.pos = 0 // reset and recalculate
 			return rave, nil
 		case key.Matches(msg, keys.Debug):
@@ -209,6 +199,16 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (rave *Rave) setFPS(bpm float64) tea.Cmd {
+	bps := bpm / 60.0
+	fps := bps * FramesPerBeat
+	fps *= 3 // decrease chance of missing a frame due to timing
+	rave.fps = fps
+	return tea.Cmd(func() tea.Msg {
+		return setFpsMsg(fps)
+	})
+}
+
 func (rave *Rave) View() string {
 	now := time.Now()
 
@@ -216,7 +216,7 @@ func (rave *Rave) View() string {
 
 	var out string
 
-	frame := int(ease.InOutCirc(pct) * 10)
+	frame := int(ease.InOutCubic(pct) * 10)
 
 	// some animations go > 100% or <100%, so be defensive and clamp to the
 	// frames since that doesn't actually make sense
@@ -230,12 +230,12 @@ func (rave *Rave) View() string {
 
 	out = strings.Repeat(out, 2)
 
-	if rave.track != nil && pos != -1 {
-		out = colors[pos%len(colors)].Apply(out)
-	}
-
 	if rave.ShowDetails {
 		out += " " + rave.viewDetails(now, pos)
+	}
+
+	if rave.track != nil && pos != -1 {
+		out = colors[pos%len(colors)].Apply(out)
 	}
 
 	return out
@@ -272,8 +272,6 @@ func (model *Rave) viewDetails(now time.Time, pos int) string {
 			bpm,
 			model.fps,
 		)
-
-		out = aec.Faint.Apply(out)
 	}
 
 	return out
@@ -307,14 +305,12 @@ func (sched *Rave) Progress(now time.Time) (int, float64) {
 	return -1, 0
 }
 
-func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
-	auth := spotifyauth.New(
-		spotifyauth.WithClientID("56f38795c77d45ee8d9db76a950258fc"),
-		spotifyauth.WithRedirectURL("http://localhost:6507/callback"),
-		spotifyauth.WithScopes(spotifyauth.ScopeUserReadCurrentlyPlaying),
-	)
+func (rave *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
+	if rave.SpotifyAuth == nil {
+		return nil, fmt.Errorf("no auth configured")
+	}
 
-	if client, err := m.existingAuth(ctx); err == nil {
+	if client, err := rave.existingAuth(ctx); err == nil {
 		// user has authenticated previously, no need for auth flow
 		return client, nil
 	}
@@ -335,7 +331,7 @@ func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		tok, err := auth.Token(r.Context(), state, r,
+		tok, err := rave.SpotifyAuth.Token(r.Context(), state, r,
 			oauth2.SetAuthURLParam("code_verifier", codeVerifier))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to get token: %s", err), http.StatusForbidden)
@@ -347,18 +343,18 @@ func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 			return
 		}
 
-		err = m.saveToken(tok)
+		err = rave.saveToken(tok)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to save token: %s", err), http.StatusInternalServerError)
 			return
 		}
 
-		ch <- spotify.New(auth.Client(r.Context(), tok))
+		ch <- spotify.New(rave.SpotifyAuth.Client(r.Context(), tok))
 	})
 
 	go http.ListenAndServe(":6507", mux)
 
-	authURL := auth.AuthURL(state,
+	authURL := rave.SpotifyAuth.AuthURL(state,
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 	)
@@ -432,7 +428,7 @@ func (m *Rave) Desync() tea.Cmd {
 		_ = os.Remove(m.SpotifyTokenPath)
 	}
 
-	m.Reset()
+	m.reset()
 
 	return nil
 }
