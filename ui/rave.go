@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fogleman/ease"
 	"github.com/morikuni/aec"
 	"github.com/pkg/browser"
 	"github.com/zmb3/spotify/v2"
@@ -26,6 +28,9 @@ type Rave struct {
 
 	// File path where tokens will be cached.
 	SpotifyTokenPath string
+
+	// The animation to display.
+	Frames [FramesPerBeat]string
 
 	// the sequence to visualize
 	start time.Time
@@ -52,10 +57,45 @@ var colors = []aec.ANSI{
 
 // DefaultBPM is a sane default of 123 beats per minute.
 const DefaultBPM = 123
+
+// FramesPerBeat determines the granularity that the spinner's animation timing
+// for each beat, i.e. 10 for tenths of a second.
 const FramesPerBeat = 10
 
+var MeterFrames = [FramesPerBeat]string{
+	0: "█",
+	1: "█",
+	2: "▇",
+	3: "▆",
+	4: "▅",
+	5: "▄",
+	6: "▃",
+	7: "▂",
+	8: "▁",
+	9: " ",
+}
+
+var FadeFrames = [FramesPerBeat]string{
+	0: "█",
+	1: "█",
+	2: "▓",
+	3: "▓",
+	4: "▒",
+	5: "▒",
+	6: "░",
+	7: "░",
+	8: " ",
+	9: " ",
+}
+
 func NewRave() *Rave {
-	return &Rave{}
+	r := &Rave{
+		Frames: MeterFrames,
+	}
+
+	r.Reset()
+
+	return r
 }
 
 func (rave *Rave) Reset() {
@@ -66,123 +106,174 @@ func (rave *Rave) Reset() {
 			Duration: 60.0 / DefaultBPM,
 		},
 	}
+	rave.track = nil
 	rave.fps = (DefaultBPM / 60.0) * FramesPerBeat
+	rave.pos = 0
 }
 
 type authed struct {
 	tok *oauth2.Token
 }
 
-func (model *Rave) Init() tea.Cmd {
+func (rave *Rave) Init() tea.Cmd {
 	ctx := context.TODO()
+	return tea.Batch(
+		tick(rave.fps),
+		func() tea.Msg {
+			client, err := rave.existingAuth(ctx)
+			if err == nil {
+				return rave.sync(ctx, client)
+			}
 
-	cmds := []tea.Cmd{}
-
-	client, err := model.existingAuth(ctx)
-	if err == nil {
-		cmds = append(cmds, model.sync(ctx, client))
-	} else {
-		cmds = append(cmds, tea.Printf("existing auth: %s", err))
-	}
-
-	cmds = append(cmds, tick(model.fps))
-
-	return tea.Batch(cmds...)
+			return nil
+		},
+	)
 }
 
-func (model *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case syncedMsg:
+		// update the new timing
+		rave.marks = msg.analysis.Beats
+
+		// the Spotify API is strange: Timestamp doesn't do what it's documented to
+		// do. the docs say it returns the server timestamp, but that's not at all
+		// true. instead it reflects the last time the state was updated.
+		//
+		// assuming no user interaction, for the first 30 seconds Timestamp will
+		// reflect the time the song started, but after 30 seconds it gets bumped
+		// once again without the user doing anything. this doesn't happen for
+		// every song.
+		//
+		// since it's going to be wrong half the time no matter what, let's just
+		// use the timestamp value directly. :(
+		rave.start = time.UnixMilli(msg.playing.Timestamp)
+
+		// update the FPS appropriately for the track's average tempo
+		bpm := msg.analysis.Track.Tempo
+		bps := bpm / 60.0
+		fps := bps * FramesPerBeat
+		fps *= 10 // decrease chance of missing a frame due to timing
+		fps = 165 // TODO: my monitor
+		fps *= 2
+		rave.fps = fps
+
+		// rewind to the beginning in case the song changed
+		//
+		// NB: this doesn't actually reset the sequence shown to the user, it just
+		// affects where we start looping through in Progress
+		rave.pos = 0
+
+		// save the playing track to enable fancier UI + music status
+		rave.track = msg.playing.Item
+
+		return rave, tea.Cmd(func() tea.Msg {
+			return setFpsMsg(fps)
+		})
+
+	case syncErrMsg:
+		return rave, tea.Printf("sync error: %s", msg.err)
+
+	// NB: these might be hit at an upper layer instead; in which case it will
+	// *not* propagate.
 	case tickMsg:
-		return model, tick(model.fps)
+		return rave, tick(rave.fps)
+	case setFpsMsg:
+		rave.fps = float64(msg)
+		return rave, tea.Printf("rave set fps: %.1f", rave.fps)
+
+	// NB: these are captured and forwarded at the outer level.
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Rave):
-			return model, model.Sync()
+			return rave, rave.Sync()
 		case key.Matches(msg, keys.EndRave):
-			return model, model.Desync()
+			return rave, rave.Desync()
+		case key.Matches(msg, keys.ForwardRave):
+			rave.start = rave.start.Add(100 * time.Millisecond)
+			rave.pos = 0 // reset and recalculate
+			return rave, nil
+		case key.Matches(msg, keys.BackwardRave):
+			rave.start = rave.start.Add(-100 * time.Millisecond)
+			rave.pos = 0 // reset and recalculate
+			return rave, nil
 		case key.Matches(msg, keys.Debug):
-			model.ShowDetails = !model.ShowDetails
+			rave.ShowDetails = !rave.ShowDetails
+			return rave, nil
 		}
-	}
 
-	return model, nil
+		return rave, nil
+
+	default:
+		return rave, nil
+	}
 }
 
-func (model *Rave) View() string {
+func (rave *Rave) View() string {
 	now := time.Now()
 
-	pos, pct := model.Progress(now)
+	pos, pct := rave.Progress(now)
 
 	var out string
 
-	switch {
-	case pos == -1:
-		// no beat
-		out += " "
-	case pct > 0.6:
-		// faded out
-		out += " "
-	case pct > 0.5:
-		out += "░"
-	case pct > 0.4:
-		out += "▒"
-	case pct > 0.3:
-		out += "▓"
-	default:
-		out += "█"
+	frame := int(ease.InOutCirc(pct) * 10)
+
+	// some animations go > 100% or <100%, so be defensive and clamp to the
+	// frames since that doesn't actually make sense
+	if frame < 0 {
+		frame = 0
+	} else if frame >= FramesPerBeat {
+		frame = FramesPerBeat - 1
 	}
 
-	if model.track != nil && pos != -1 {
+	out += rave.Frames[frame]
+
+	out = strings.Repeat(out, 2)
+
+	if rave.track != nil && pos != -1 {
 		out = colors[pos%len(colors)].Apply(out)
 	}
 
-	if model.ShowDetails {
-		out += model.Details(now)
+	if rave.ShowDetails {
+		out += " " + rave.viewDetails(now, pos)
 	}
 
 	return out
 }
 
-func (model *Rave) Details(now time.Time) string {
-	if model.track == nil {
-		return ""
-	}
-
-	pos, _ := model.Progress(now)
-
+func (model *Rave) viewDetails(now time.Time, pos int) string {
 	var out string
 
-	if pos%2 == 0 {
-		out += "♫ "
-	} else {
-		out += "♪ "
-	}
-
-	for i, artist := range model.track.Artists {
-		if i > 0 {
-			out += ", "
+	if model.track != nil {
+		for i, artist := range model.track.Artists {
+			if i > 0 {
+				out += ", "
+			}
+			out += artist.Name
 		}
-		out += artist.Name
-	}
 
-	out += " - " + model.track.Name
+		out += " - " + model.track.Name
+	}
 
 	if pos != -1 {
 		mark := model.marks[pos]
 
+		elapsed := time.Duration(mark.Start * float64(time.Second))
 		dur := time.Duration(mark.Duration * float64(time.Second))
 		bpm := time.Minute / dur
 
-		out += " "
+		if out != "" {
+			out += " "
+		}
+
 		out += fmt.Sprintf(
-			"♪ %d/%d %dbpm %.1ffps",
-			pos+1,
-			len(model.marks),
+			"%s %dbpm %.1ffps",
+			elapsed.Truncate(time.Second),
 			bpm,
 			model.fps,
 		)
 
-		out = colors[pos%len(colors)].Apply(out)
+		out = aec.Faint.Apply(out)
 	}
 
 	return out
@@ -244,8 +335,6 @@ func (m *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		defer close(ch)
-
 		tok, err := auth.Token(r.Context(), state, r,
 			oauth2.SetAuthURLParam("code_verifier", codeVerifier))
 		if err != nil {
@@ -328,12 +417,14 @@ func (m *Rave) existingAuth(ctx context.Context) (*spotify.Client, error) {
 func (m *Rave) Sync() tea.Cmd {
 	ctx := context.TODO()
 
-	client, err := m.spotifyAuth(ctx)
-	if err != nil {
-		return tea.Println("failed to authenticate:", err)
-	}
+	return func() tea.Msg {
+		client, err := m.spotifyAuth(ctx)
+		if err != nil {
+			return tea.Println("failed to authenticate:", err)
+		}
 
-	return m.sync(ctx, client)
+		return m.sync(ctx, client)
+	}
 }
 
 func (m *Rave) Desync() tea.Cmd {
@@ -341,58 +432,39 @@ func (m *Rave) Desync() tea.Cmd {
 		_ = os.Remove(m.SpotifyTokenPath)
 	}
 
-	m.track = nil
+	m.Reset()
 
 	return nil
 }
 
-func (m *Rave) sync(ctx context.Context, client *spotify.Client) tea.Cmd {
+type syncedMsg struct {
+	playing  *spotify.CurrentlyPlaying
+	analysis *spotify.AudioAnalysis
+}
+
+type syncErrMsg struct {
+	err error
+}
+
+func (m *Rave) sync(ctx context.Context, client *spotify.Client) tea.Msg {
 	playing, err := client.PlayerCurrentlyPlaying(ctx)
 	if err != nil {
-		return tea.Printf("failed to get currently playing: %s", err)
+		return syncErrMsg{fmt.Errorf("get currently playing: %w", err)}
 	}
 
 	if playing.Item == nil {
-		return tea.Printf("nothing playing")
+		return syncErrMsg{fmt.Errorf("nothing playing")}
 	}
 
 	analysis, err := client.GetAudioAnalysis(ctx, playing.Item.ID)
 	if err != nil {
-		return tea.Printf("failed to get audio analysis: %s", err)
+		return syncErrMsg{fmt.Errorf("failed to get audio analysis: %w", err)}
 	}
 
-	// update the new timing
-	m.marks = analysis.Beats
-
-	// the Spotify API is strange: Timestamp doesn't do what it's documented to
-	// do. the docs say it returns the server timestamp, but that's not at all
-	// true. instead it reflects the last time the state was updated.
-	//
-	// assuming no user interaction, for the first 30 seconds Timestamp will
-	// reflect the time the song started, but after 30 seconds it gets bumped
-	// once again without the user doing anything. this doesn't happen for
-	// every song.
-	//
-	// since it's going to be wrong half the time no matter what, let's just
-	// use the timestamp value directly. :(
-	m.start = time.UnixMilli(playing.Timestamp)
-
-	// update the FPS appropriately for the track's average tempo
-	bpm := analysis.Track.Tempo
-	bps := bpm / 60.0
-	fps := bps * 10 // each beat's frames are spread across tenths of a second
-	m.fps = fps
-
-	// rewind to the beginning in case the song changed
-	//
-	// NB: this doesn't actually reset the sequence shown to the user, it just
-	// affects where we start looping through in Progress
-	m.pos = 0
-
-	// save the playing track to enable fancier UI + music status
-	m.track = playing.Item
-
-	return nil
+	return syncedMsg{
+		playing:  playing,
+		analysis: analysis,
+	}
 }
 
 func (m *Rave) saveToken(tok *oauth2.Token) error {

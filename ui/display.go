@@ -73,7 +73,7 @@ func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool
 
 		interrupt: interrupt,
 
-		fps: 30,
+		fps: 10,
 
 		// sane defaults before we have the real window size
 		maxWidth:  80,
@@ -130,6 +130,8 @@ type eofMsg struct{}
 
 type tickMsg time.Time
 
+type setFpsMsg float64
+
 func tick(fps float64) tea.Cmd {
 	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
 		return tickMsg(t)
@@ -185,11 +187,13 @@ type beatMsg time.Time
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Rave    key.Binding
-	EndRave key.Binding
-	Debug   key.Binding
-	Help    key.Binding
-	Quit    key.Binding
+	Rave         key.Binding
+	EndRave      key.Binding
+	ForwardRave  key.Binding
+	BackwardRave key.Binding
+	Debug        key.Binding
+	Help         key.Binding
+	Quit         key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the mini help view. It's part
@@ -203,24 +207,11 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Help, k.Quit, k.Debug},
-		{k.Rave, k.EndRave},
+		{k.Rave, k.EndRave, k.ForwardRave, k.BackwardRave},
 	}
 }
 
 var keys = keyMap{
-	Rave: key.NewBinding(
-		key.WithKeys("r"),
-		key.WithHelp("r", "rave"),
-	),
-	EndRave: key.NewBinding(
-		key.WithKeys("R"),
-		key.WithHelp("R", "end rave"),
-	),
-	// NB: this isn't rave-specific; one key to debug them all
-	Debug: key.NewBinding(
-		key.WithKeys("d"),
-		key.WithHelp("d", "show debug info"),
-	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
@@ -229,17 +220,43 @@ var keys = keyMap{
 		key.WithKeys("q", "esc", "ctrl+c"),
 		key.WithHelp("q", "quit"),
 	),
+	// NB: this isn't rave-specific; one key to debug them all
+	Debug: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "debug ui"),
+	),
+	Rave: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "rave"),
+	),
+	EndRave: key.NewBinding(
+		key.WithKeys("R"),
+		key.WithHelp("R", "end rave"),
+	),
+	ForwardRave: key.NewBinding(
+		key.WithKeys("+"),
+		key.WithHelp("+", "rave forward"),
+	),
+	BackwardRave: key.NewBinding(
+		key.WithKeys("-"),
+		key.WithHelp("-", "rave backward"),
+	),
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
 	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, keys.Rave) ||
-			key.Matches(msg, keys.EndRave) ||
-			key.Matches(msg, keys.Debug):
+		case key.Matches(msg,
+			keys.Debug,
+			keys.Rave, keys.EndRave,
+			keys.ForwardRave, keys.BackwardRave):
 			m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
+			cmds = append(cmds, cmd)
 		case key.Matches(msg, keys.Quit):
 			// don't tea.Quit, let the UI finish
 			m.interrupt()
@@ -250,40 +267,52 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.WindowSizeMsg:
-		if !m.tui {
-			return m, cmd
+		if m.tui {
+			m.maxWidth = msg.Width
+			m.maxHeight = msg.Height
+			m.viewport.Width = m.maxWidth
+			m.help.Width = m.maxWidth / 2
 		}
-
-		m.maxWidth = msg.Width
-		m.maxHeight = msg.Height
-		m.viewport.Width = m.maxWidth
-		m.help.Width = m.maxWidth / 2
-
-		return m, cmd
 
 	case statusMsg:
 		m.t.update(msg, m.vtermHeight(), m.viewportWidth())
-		return m, cmd
 
 	case eofMsg:
 		m.finished = true
 		m.render()
-		return m, tea.Quit
+		cmds = append(cmds, tea.Quit)
 
 	case tickMsg:
+		// NB: take care not to forward tickMsg downstream, since that will result
+		// in runaway ticks. instead inner components should send a setFpsMsg to
+		// adjust the outermost layer.
 		m.render()
-		return m, tick(m.fps)
+		cmds = append(cmds, tick(m.fps))
+
+	case setFpsMsg:
+		m.fps = float64(msg)
 
 	default:
+		m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
+		cmds = append(cmds, cmd)
+
 		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
+		cmds = append(cmds, cmd)
 	}
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m *Model) render() {
 	if m.tui {
 		buf := new(bytes.Buffer)
-		m.disp.printJobs(buf, m.t.displayInfo(), m.vtermHeight(), m.viewportWidth(), m.viewportHeight())
+		m.disp.printJobs(
+			buf,
+			m.t.displayInfo(),
+			m.vtermHeight(),
+			m.viewportWidth(),
+			m.viewportHeight(),
+		)
 
 		content := strings.TrimRight(buf.String(), "\n")
 
