@@ -234,8 +234,8 @@ var keys = keyMap{
 		key.WithHelp("R", "end rave"),
 	),
 	ForwardRave: key.NewBinding(
-		key.WithKeys("+"),
-		key.WithHelp("+", "seek forward"),
+		key.WithKeys("+", "="),
+		key.WithHelp("+/=", "seek forward"),
 	),
 	BackwardRave: key.NewBinding(
 		key.WithKeys("-"),
