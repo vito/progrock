@@ -326,11 +326,19 @@ func (m *Model) View() string {
 		return buf.String()
 	}
 
+	helpView := m.help.View(keys)
+
+	helpSep := " "
+	widthMinusHelp := m.maxWidth - lipgloss.Width(helpView)
+	widthMinusHelp -= len(helpSep)
+
 	footer := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		m.ui.Spinner.View(),
-		" ",
-		m.disp.status(m.t.displayInfo()),
+		lipgloss.Bottom,
+		lipgloss.NewStyle().
+			MaxWidth(widthMinusHelp).
+			Render(m.ui.Spinner.View()+" "+m.disp.status(m.t.displayInfo())),
+		helpSep,
+		helpView,
 	)
 
 	chromeHeight := lipgloss.Height(footer)
@@ -341,22 +349,9 @@ func (m *Model) View() string {
 		m.viewport.Height = max
 	}
 
-	helpView := m.help.View(keys)
-
-	m.viewport.Width = m.maxWidth - lipgloss.Width(helpView)
-
-	// enforce width, since viewport doesn't seem to
-	progressView :=
-		lipgloss.NewStyle().Width(m.viewport.Width).
-			Render(m.viewport.View())
-
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			progressView,
-			helpView,
-		),
+		m.viewport.View(),
 		footer,
 	)
 }
