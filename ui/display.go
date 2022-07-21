@@ -223,6 +223,19 @@ var keys = keyMap{
 	),
 }
 
+// SetWindowSize is exposed so that the UI can be manually driven.
+func (m *Model) SetWindowSize(w, h int) {
+	m.maxWidth = w
+	m.maxHeight = h
+	m.viewport.Width = m.maxWidth
+	m.help.Width = m.maxWidth / 2
+}
+
+// StatusUpdate is exposed so that the UI can be manually driven.
+func (m *Model) StatusUpdate(status *graph.SolveStatus) {
+	m.t.update(status, m.vtermHeight(), m.viewportWidth())
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -248,14 +261,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		if m.tui {
-			m.maxWidth = msg.Width
-			m.maxHeight = msg.Height
-			m.viewport.Width = m.maxWidth
-			m.help.Width = m.maxWidth / 2
+			m.SetWindowSize(msg.Width, msg.Height)
 		}
 
 	case statusMsg:
-		m.t.update(msg, m.vtermHeight(), m.viewportWidth())
+		m.StatusUpdate(msg)
 
 	case eofMsg:
 		m.finished = true
