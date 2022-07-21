@@ -167,6 +167,8 @@ github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea h1:SXhTLE6pb6eld/
 github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea/go.mod h1:WPnis/6cRcDZSUvVmezrxJPkiO87ThFYsoUiMwWNDJk=
 github.com/vito/vt100 v0.0.0-20220718022351-a940946ed5b6 h1:hy3V9e5pNR7sTIi/01h4F8xL0J/9CHkUehjjPbPvzck=
 github.com/vito/vt100 v0.0.0-20220718022351-a940946ed5b6/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
+github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9 h1:w5wq45A37gCoC0c3Tu2TorPVKjHwYV2IMywZJHaYEjU=
+github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

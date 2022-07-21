@@ -12,7 +12,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/vito/vt100 v0.0.0-20220718022351-a940946ed5b6
+	github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9
 	github.com/zmb3/spotify/v2 v2.2.1
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f
 )
