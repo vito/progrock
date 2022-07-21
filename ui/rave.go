@@ -133,6 +133,11 @@ func (rave *Rave) Init() tea.Cmd {
 func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case syncedMsg:
+		if msg.playing != nil {
+			// nothing playing
+			return rave, nil
+		}
+
 		// update the new timing
 		rave.marks = msg.analysis.Beats
 
@@ -449,7 +454,7 @@ func (m *Rave) sync(ctx context.Context, client *spotify.Client) tea.Msg {
 	}
 
 	if playing.Item == nil {
-		return syncErrMsg{fmt.Errorf("nothing playing")}
+		return syncedMsg{} // no song playing
 	}
 
 	analysis, err := client.GetAudioAnalysis(ctx, playing.Item.ID)
