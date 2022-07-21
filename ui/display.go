@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"container/ring"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/morikuni/aec"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/units"
@@ -33,9 +39,9 @@ func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Write
 	opts := []tea.ProgramOption{tea.WithOutput(w)}
 
 	if tui {
-		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
+		opts = append(opts, tea.WithMouseCellMotion())
 	} else {
-		opts = append(opts, tea.WithInput(nil), tea.WithoutRenderer())
+		opts = append(opts, tea.WithoutRenderer())
 	}
 
 	prog := tea.NewProgram(model, opts...)
@@ -52,17 +58,13 @@ func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Write
 		}
 	}()
 
-	if err := prog.Start(); err != nil {
-		return err
-	}
-
-	model.Print(w)
-
-	return nil
+	return prog.Start()
 }
 
 func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool) *Model {
 	return &Model{
+		ui: ui,
+
 		t: newTrace(ui, tui),
 
 		tui:     tui,
@@ -70,10 +72,21 @@ func NewModel(interrupt context.CancelFunc, w io.Writer, ui Components, tui bool
 		printer: &textMux{w: w, ui: ui},
 
 		interrupt: interrupt,
+
+		fps: 10,
+
+		// sane defaults before we have the real window size
+		maxWidth:  80,
+		maxHeight: 24,
+		viewport:  viewport.New(80, 24),
+
+		help: help.New(),
 	}
 }
 
 type Model struct {
+	ui Components
+
 	t *trace
 
 	tui     bool
@@ -82,35 +95,22 @@ type Model struct {
 
 	interrupt func()
 
-	hasViewport bool
-	viewport    viewport.Model
-}
+	viewport      viewport.Model
+	maxWidth      int
+	maxHeight     int
+	contentHeight int
 
-const headerHeight = 0
-const footerHeight = 1
-const chromeHeight = headerHeight + footerHeight
+	// UI refresh rate
+	fps float64
 
-func (m *Model) SetWindowSize(w, h int) {
-	if m.hasViewport {
-		m.viewport.Width = w
-		m.viewport.Height = h - chromeHeight
-	} else {
-		m.viewport = viewport.Model{
-			Width:  w,
-			Height: h - chromeHeight,
-		}
+	finished bool
 
-		m.hasViewport = true
-	}
-}
-
-func (m *Model) StatusUpdate(status *graph.SolveStatus) {
-	m.t.update(status, m.vtermHeight(), m.viewportWidth())
+	help help.Model
 }
 
 func (model *Model) Print(w io.Writer) {
 	if model.tui {
-		model.disp.print(
+		model.disp.printJobs(
 			w,
 			model.t.displayInfo(),
 			model.vtermHeight(),
@@ -130,14 +130,19 @@ type eofMsg struct{}
 
 type tickMsg time.Time
 
-func tick() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+type setFpsMsg float64
+
+func tick(fps float64) tea.Cmd {
+	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
 func (tui *Model) Init() tea.Cmd {
-	return tick()
+	return tea.Batch(
+		tick(tui.fps),
+		tui.ui.Spinner.Init(),
+	)
 }
 
 func (m *Model) viewportWidth() int {
@@ -159,64 +164,209 @@ func (m *Model) viewportHeight() int {
 }
 
 func (m *Model) vtermHeight() int {
-	return m.viewportHeight() / 3
+	return m.maxHeight / 3
+}
+
+func b64s256(val []byte) string {
+	h := sha256.New()
+	h.Write(val)
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}
+
+func b64rand(bytes int) (string, error) {
+	data := make([]byte, bytes)
+	if _, err := rand.Read(data); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+type beatMsg time.Time
+
+// keyMap defines a set of keybindings. To work for help it must satisfy
+// key.Map. It could also very easily be a map[string]key.Binding.
+type keyMap struct {
+	Rave         key.Binding
+	EndRave      key.Binding
+	ForwardRave  key.Binding
+	BackwardRave key.Binding
+	Debug        key.Binding
+	Help         key.Binding
+	Quit         key.Binding
+}
+
+// ShortHelp returns keybindings to be shown in the mini help view. It's part
+// of the key.Map interface.
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Help, k.Quit}
+}
+
+// FullHelp returns keybindings for the expanded help view. It's part of the
+// key.Map interface.
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Help, k.Quit, k.Debug},
+		{k.Rave, k.EndRave, k.ForwardRave, k.BackwardRave},
+	}
+}
+
+var keys = keyMap{
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "help"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "esc", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+	// NB: this isn't rave-specific; one key to debug them all
+	Debug: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "debug ui"),
+	),
+	Rave: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "rave"),
+	),
+	EndRave: key.NewBinding(
+		key.WithKeys("R"),
+		key.WithHelp("R", "end rave"),
+	),
+	ForwardRave: key.NewBinding(
+		key.WithKeys("+", "="),
+		key.WithHelp("+/=", "seek forward"),
+	),
+	BackwardRave: key.NewBinding(
+		key.WithKeys("-"),
+		key.WithHelp("-", "seek backward"),
+	),
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		cmd  tea.Cmd
-		cmds []tea.Cmd
-	)
+	var cmds []tea.Cmd
+
+	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if k := msg.String(); k == "ctrl+c" || k == "q" || k == "esc" {
+		switch {
+		case key.Matches(msg,
+			keys.Debug,
+			keys.Rave, keys.EndRave,
+			keys.ForwardRave, keys.BackwardRave):
+			m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		case key.Matches(msg, keys.Quit):
+			// don't tea.Quit, let the UI finish
 			m.interrupt()
-			return m, nil
+		case key.Matches(msg, keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
 		}
+
+		return m, cmd
 
 	case tea.WindowSizeMsg:
-		if !m.tui {
-			break
+		if m.tui {
+			m.maxWidth = msg.Width
+			m.maxHeight = msg.Height
+			m.viewport.Width = m.maxWidth
+			m.help.Width = m.maxWidth / 2
 		}
-
-		m.SetWindowSize(msg.Width, msg.Height)
 
 	case statusMsg:
-		m.StatusUpdate(msg)
+		m.t.update(msg, m.vtermHeight(), m.viewportWidth())
 
 	case eofMsg:
-		return m, tea.Quit
+		m.finished = true
+		m.render()
+		cmds = append(cmds, tea.Quit)
 
 	case tickMsg:
-		if m.tui && m.hasViewport {
-			buf := new(bytes.Buffer)
-			m.disp.print(buf, m.t.displayInfo(), m.vtermHeight(), m.viewportWidth(), m.viewportHeight())
+		// NB: take care not to forward tickMsg downstream, since that will result
+		// in runaway ticks. instead inner components should send a setFpsMsg to
+		// adjust the outermost layer.
+		m.render()
+		cmds = append(cmds, tick(m.fps))
 
-			atBottom := m.viewport.AtBottom()
-			m.viewport.SetContent(buf.String())
-			if atBottom {
-				m.viewport.GotoBottom()
-			}
-		} else {
-			m.printer.print(m.t)
-		}
+	case setFpsMsg:
+		m.fps = float64(msg)
 
-		cmds = append(cmds, tick())
+	default:
+		m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
+		cmds = append(cmds, cmd)
+
+		m.viewport, cmd = m.viewport.Update(msg)
+		cmds = append(cmds, cmd)
 	}
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
 
-func (m *Model) View() string {
-	status := m.disp.status(m.t.displayInfo())
-	return fmt.Sprintf("%s\n%s", status, m.viewport.View())
+func (m *Model) render() {
+	if m.tui {
+		buf := new(bytes.Buffer)
+		m.disp.printJobs(
+			buf,
+			m.t.displayInfo(),
+			m.vtermHeight(),
+			m.viewportWidth(),
+			m.viewportHeight(),
+		)
+
+		content := strings.TrimRight(buf.String(), "\n")
+
+		atBottom := m.viewport.AtBottom()
+
+		m.viewport.SetContent(content)
+		m.contentHeight = lipgloss.Height(content)
+
+		if atBottom {
+			m.viewport.GotoBottom()
+		}
+	} else {
+		m.printer.print(m.t)
+	}
 }
 
-const termPad = 4
+func (m *Model) View() string {
+	if m.finished {
+		buf := new(bytes.Buffer)
+		m.Print(buf)
+		return buf.String()
+	}
+
+	footer := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		m.ui.Spinner.View(),
+		" ",
+		m.disp.status(m.t.displayInfo()),
+	)
+
+	chromeHeight := lipgloss.Height(footer)
+
+	max := m.maxHeight - chromeHeight
+	m.viewport.Height = m.contentHeight
+	if m.viewport.Height+chromeHeight > m.maxHeight {
+		m.viewport.Height = max
+	}
+
+	helpView := m.help.View(keys)
+
+	m.viewport.Width = m.maxWidth - lipgloss.Width(helpView)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.viewport.View(),
+			helpView,
+		),
+		footer,
+	)
+}
+
+const termPad = 3
 
 type displayInfo struct {
 	startTime      time.Time
@@ -271,8 +421,8 @@ type vertex struct {
 
 func (v *vertex) update(c int) {
 	if v.count == 0 {
-		now := time.Now()
-		v.lastBlockTime = &now
+		serverNow := time.Now()
+		v.lastBlockTime = &serverNow
 	}
 	v.count += c
 }
@@ -598,7 +748,38 @@ func (disp *display) status(d displayInfo) string {
 	)
 }
 
-func (disp *display) print(w io.Writer, d displayInfo, termHeight, width, height int) {
+type chronological []*job
+
+func (c chronological) Len() int {
+	return len(c)
+}
+
+func (c chronological) Less(i, j int) bool {
+	ji := c[i]
+	jj := c[j]
+
+	if ji.completedTime == nil && jj.completedTime == nil {
+		return false
+	}
+
+	if ji.completedTime == nil && jj.completedTime != nil {
+		return false
+	}
+
+	if ji.completedTime != nil && jj.completedTime == nil {
+		return true
+	}
+
+	return ji.completedTime.Before(*jj.completedTime)
+}
+
+func (c chronological) Swap(i, j int) {
+	c[i], c[j] = c[j], c[i]
+}
+
+func (disp *display) printJobs(w io.Writer, d displayInfo, termHeight, width, height int) {
+	sort.Stable(chronological(d.jobs))
+
 	for _, j := range d.jobs {
 		disp.printJob(w, j, d, termHeight, width, height)
 	}

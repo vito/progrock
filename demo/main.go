@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
+	"sync"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 	"github.com/vito/progrock/ui"
 )
@@ -15,46 +16,63 @@ func main() {
 	r, w := progrock.Pipe()
 	rec := progrock.NewRecorder(w)
 
-	_, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	rec.Display(stop, ui.Default, os.Stderr, r, false)
+	rec.Display(cancel, ui.Default, os.Stderr, r, true)
 	defer rec.Stop()
 
 	failed := rec.Vertex("failed vertex", "failed vertex")
-	fmt.Fprintln(failed.Stderr(), "some logs")
-	fmt.Fprintln(failed.Stderr(), "some more logs")
-	failed.Error(fmt.Errorf("bam"))
+	failed.Task("finished task").Complete()
+	fmt.Fprintln(failed.Stderr(), "some failed vertex logs")
+	fmt.Fprintln(failed.Stderr(), "some more failed vertex logs")
+	fmt.Fprintln(failed.Stderr(), "even more failed vertex logs")
+	failed.Done(fmt.Errorf("bam"))
 
 	failedTask := rec.Vertex("failed", "failed task in vertex")
 	failedTask.Task("errored task")
-	fmt.Fprintln(failedTask.Stderr(), "some logs")
-	fmt.Fprintln(failedTask.Stderr(), "some more logs")
-	failedTask.Error(fmt.Errorf("oh noes"))
+	fmt.Fprintln(failedTask.Stderr(), "some failed task logs")
+	fmt.Fprintln(failedTask.Stderr(), "some more failed task logs")
+	failedTask.Done(fmt.Errorf("oh noes"))
 
-	succeeds := rec.Vertex("log-and-count", "banana")
+	wg := new(sync.WaitGroup)
 
-	time.Sleep(500 * time.Millisecond)
+	for v := 0; v < 3; v++ {
+		v := v
 
-	succeeds.Task("finished task").Complete()
+		succeeds := rec.Vertex(
+			digest.Digest(fmt.Sprintf("log-and-count-%d", v)),
+			fmt.Sprintf("count and log: #%d", v+1),
+		)
 
-	count := succeeds.Task("counting task")
-	count.Start()
+		count := succeeds.Task("counting task")
+		count.Start()
 
-	var total int64 = 10
-	for i := int64(0); i < total; i++ {
-		fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
-		fmt.Fprintf(succeeds.Stderr(), "stderr %d\n", i)
-		count.Progress(i, total)
-		time.Sleep(50 * time.Millisecond)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			time.Sleep(500 * time.Millisecond)
+
+			for i := int64(0); ctx.Err() == nil; i++ {
+				fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
+				fmt.Fprintf(succeeds.Stderr(), "stderr %d\n", i)
+
+				select {
+				case <-time.After(500 * time.Millisecond):
+				case <-ctx.Done():
+				}
+			}
+
+			fmt.Fprintln(succeeds.Stdout(), "done")
+			fmt.Fprintln(succeeds.Stderr(), "done")
+			count.Complete()
+
+			succeeds.Complete()
+		}()
 	}
 
-	fmt.Fprintln(succeeds.Stdout(), "done")
-	fmt.Fprintln(succeeds.Stderr(), "done")
-	count.Progress(total, total)
-	count.Complete()
-
-	succeeds.Complete()
+	wg.Wait()
 
 	w.Close()
 }

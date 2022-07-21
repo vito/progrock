@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/morikuni/aec"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/morikuni/aec"
+)
 
 type Components struct {
 	ConsoleRunning, ConsoleDone        string
@@ -31,6 +34,8 @@ type Components struct {
 
 	ErrorHeader, ErrorFooter string
 	ErrorLogFormat           string
+
+	Spinner tea.Model
 }
 
 var vertexID = aec.MagentaF.Apply("%d:")
@@ -39,13 +44,13 @@ var Default = Components{
 	ConsoleRunning: "Building %s (%d/%d)",
 	ConsoleDone:    "Building %s (%d/%d) " + aec.GreenF.Apply("done"),
 
-	ConsoleLogFormat:                   "  " + aec.LightBlackF.Apply("│") + " %s",
+	ConsoleLogFormat:                   " " + aec.LightBlackF.Apply("▕") + " %s",
 	ConsoleVertexRunning:               aec.YellowF.Apply("=> %s"),
 	ConsoleVertexCanceled:              aec.YellowF.Apply("=> %s CANCELED"),
 	ConsoleVertexErrored:               aec.RedF.Apply("=> %s ERROR"),
 	ConsoleVertexCached:                aec.BlueF.Apply("=> %s CACHED"),
 	ConsoleVertexDone:                  aec.GreenF.Apply("=> %s"),
-	ConsoleVertexStatus:                "--> %s",
+	ConsoleVertexStatus:                "-> %s",
 	ConsoleVertexStatusProgressBound:   "%.2f / %.2f",
 	ConsoleVertexStatusProgressUnbound: "%.2f",
 
@@ -67,4 +72,6 @@ var Default = Components{
 	ErrorLogFormat: "  " + aec.YellowF.Apply("!") + " %[2]s %[3]s",
 	ErrorHeader:    aec.YellowF.Apply("!!!") + " " + aec.RedF.Apply("%s") + "\n",
 	ErrorFooter:    "",
+
+	Spinner: NewRave(),
 }
