@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"container/ring"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"sort"
@@ -166,23 +163,6 @@ func (m *Model) viewportHeight() int {
 func (m *Model) vtermHeight() int {
 	return m.maxHeight / 3
 }
-
-func b64s256(val []byte) string {
-	h := sha256.New()
-	h.Write(val)
-	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
-}
-
-func b64rand(bytes int) (string, error) {
-	data := make([]byte, bytes)
-	if _, err := rand.Read(data); err != nil {
-		return "", err
-	}
-
-	return base64.RawURLEncoding.EncodeToString(data), nil
-}
-
-type beatMsg time.Time
 
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.

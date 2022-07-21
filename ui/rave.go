@@ -2,6 +2,9 @@ package ui
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -23,6 +26,9 @@ type Rave struct {
 	// Show extra details useful for debugging a desynced rave.
 	ShowDetails bool
 
+	// Address (host:port) on which to listen for auth callbacks.
+	AuthCallbackAddr string
+
 	// Configuration for syncing with Spotify.
 	SpotifyAuth *spotifyauth.Authenticator
 
@@ -31,6 +37,11 @@ type Rave struct {
 
 	// The animation to display.
 	Frames [FramesPerBeat]string
+
+	// transmits an authenticated Spotify client during the auth callback flow
+	spotifyAuthState    string
+	spotifyAuthVerifier string
+	spotifyAuthCh       chan *spotify.Client
 
 	// the sequence to visualize
 	start time.Time
@@ -91,6 +102,8 @@ var FadeFrames = [FramesPerBeat]string{
 func NewRave() *Rave {
 	r := &Rave{
 		Frames: MeterFrames,
+
+		spotifyAuthCh: make(chan *spotify.Client),
 	}
 
 	r.reset()
@@ -116,7 +129,8 @@ type authed struct {
 
 func (rave *Rave) Init() tea.Cmd {
 	ctx := context.TODO()
-	return tea.Batch(
+
+	cmds := []tea.Cmd{
 		tick(rave.fps),
 		rave.setFPS(DefaultBPM),
 		func() tea.Msg {
@@ -127,7 +141,55 @@ func (rave *Rave) Init() tea.Cmd {
 
 			return nil
 		},
+	}
+
+	if rave.AuthCallbackAddr != "" {
+		var err error
+		rave.spotifyAuthState, err = b64rand(16)
+		if err != nil {
+			cmds = append(cmds, tea.Printf("failed to generate auth state: %s", err))
+			return tea.Batch(cmds...)
+		}
+
+		rave.spotifyAuthVerifier, err = b64rand(64)
+		if err != nil {
+			cmds = append(cmds, tea.Printf("failed to generate verifier: %s", err))
+			return tea.Batch(cmds...)
+		}
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/auth/spotify", func(w http.ResponseWriter, r *http.Request) {
+			tok, err := rave.SpotifyAuth.Token(r.Context(), rave.spotifyAuthState, r,
+				oauth2.SetAuthURLParam("code_verifier", rave.spotifyAuthVerifier))
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to get token: %s", err), http.StatusForbidden)
+				return
+			}
+
+			if st := r.FormValue("state"); st != rave.spotifyAuthState {
+				http.Error(w, fmt.Sprintf("bad state: %s != %s", st, rave.spotifyAuthState), http.StatusForbidden)
+				return
+			}
+
+			err = rave.saveToken(tok)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to save token: %s", err), http.StatusInternalServerError)
+				return
+			}
+
+			rave.spotifyAuthCh <- spotify.New(rave.SpotifyAuth.Client(r.Context(), tok))
+		})
+
+		go http.ListenAndServe(rave.AuthCallbackAddr, mux)
+	}
+
+	return tea.Batch(
+		cmds...,
 	)
+}
+
+func (rave *Rave) SpotifyCallbackURL() string {
+	return "http://" + rave.AuthCallbackAddr + "/auth/spotify"
 }
 
 func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -320,57 +382,19 @@ func (rave *Rave) spotifyAuth(ctx context.Context) (*spotify.Client, error) {
 		return client, nil
 	}
 
-	ch := make(chan *spotify.Client)
+	codeChallenge := b64s256([]byte(rave.spotifyAuthVerifier))
 
-	state, err := b64rand(16)
-	if err != nil {
-		return nil, fmt.Errorf("generate state: %w", err)
-	}
-
-	codeVerifier, err := b64rand(64)
-	if err != nil {
-		return nil, fmt.Errorf("generate verifier: %w", err)
-	}
-
-	codeChallenge := b64s256([]byte(codeVerifier))
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		tok, err := rave.SpotifyAuth.Token(r.Context(), state, r,
-			oauth2.SetAuthURLParam("code_verifier", codeVerifier))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to get token: %s", err), http.StatusForbidden)
-			return
-		}
-
-		if st := r.FormValue("state"); st != state {
-			http.Error(w, fmt.Sprintf("bad state: %s != %s", st, state), http.StatusForbidden)
-			return
-		}
-
-		err = rave.saveToken(tok)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to save token: %s", err), http.StatusInternalServerError)
-			return
-		}
-
-		ch <- spotify.New(rave.SpotifyAuth.Client(r.Context(), tok))
-	})
-
-	go http.ListenAndServe(":6507", mux)
-
-	authURL := rave.SpotifyAuth.AuthURL(state,
+	authURL := rave.SpotifyAuth.AuthURL(rave.spotifyAuthState,
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 	)
 
-	err = browser.OpenURL(authURL)
-	if err != nil {
+	if err := browser.OpenURL(authURL); err != nil {
 		return nil, fmt.Errorf("open browser: %w", err)
 	}
 
 	select {
-	case client, ok := <-ch:
+	case client, ok := <-rave.spotifyAuthCh:
 		if !ok {
 			return nil, fmt.Errorf("callback error")
 		}
@@ -484,4 +508,19 @@ func (m *Rave) saveToken(tok *oauth2.Token) error {
 	}
 
 	return nil
+}
+
+func b64s256(val []byte) string {
+	h := sha256.New()
+	h.Write(val)
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}
+
+func b64rand(bytes int) (string, error) {
+	data := make([]byte, bytes)
+	if _, err := rand.Read(data); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(data), nil
 }
