@@ -335,11 +335,16 @@ func (m *Model) View() string {
 
 	m.viewport.Width = m.maxWidth - lipgloss.Width(helpView)
 
+	// enforce width, since viewport doesn't seem to
+	progressView :=
+		lipgloss.NewStyle().Width(m.viewport.Width).
+			Render(m.viewport.View())
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			m.viewport.View(),
+			progressView,
 			helpView,
 		),
 		footer,
