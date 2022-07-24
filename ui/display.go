@@ -38,7 +38,7 @@ func (ui Components) DisplaySolveStatus(interrupt context.CancelFunc, w io.Write
 	if tui {
 		opts = append(opts, tea.WithMouseCellMotion())
 	} else {
-		opts = append(opts, tea.WithoutRenderer())
+		opts = append(opts, tea.WithInput(new(bytes.Buffer)), tea.WithoutRenderer())
 	}
 
 	prog := tea.NewProgram(model, opts...)
