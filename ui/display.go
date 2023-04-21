@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/morikuni/aec"
+	"github.com/muesli/termenv"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/units"
 	"github.com/vito/progrock/graph"
@@ -257,8 +257,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.ShowAll = !m.help.ShowAll
 		}
 
-		return m, cmd
-
 	case tea.WindowSizeMsg:
 		if m.tui {
 			m.SetWindowSize(msg.Width, msg.Height)
@@ -493,7 +491,7 @@ func (t *trace) update(s *graph.SolveStatus, termHeight, termWidth int) {
 			t.vertexes = append(t.vertexes, t.byDigest[v.Digest])
 		}
 		// allow a duplicate initial vertex that shouldn't reset state
-		if !(prev != nil && prev.Started != nil && v.Started == nil) {
+		if prev == nil || prev.Started == nil || v.Started != nil {
 			t.byDigest[v.Digest].Vertex = v
 		}
 		t.byDigest[v.Digest].jobCached = false
@@ -636,7 +634,7 @@ func (t *trace) displayInfo() (d displayInfo) {
 		vertexJob := &job{
 			startTime:     addTime(v.Started, t.localTimeDiff),
 			completedTime: addTime(v.Completed, t.localTimeDiff),
-			name:          strings.Replace(v.Name, "\t", " ", -1),
+			name:          strings.ReplaceAll(v.Name, "\t", " "),
 			vertex:        v,
 		}
 
@@ -839,108 +837,67 @@ func renderTerm(w io.Writer, ui Components, term *vt100.VT100) {
 			line += string(r)
 		}
 
-		line += aec.Reset
+		line += reset
 
 		out := fmt.Sprintf(ui.ConsoleLogFormat, line)
 		fmt.Fprintf(w, "%s\n", out)
 	}
 }
 
+const reset = termenv.CSI + termenv.ResetSeq + "m"
+
 func renderFormat(f vt100.Format) string {
-	if f == (vt100.Format{}) {
-		return aec.Reset
+	styles := []string{}
+	if f.Fg != nil {
+		styles = append(styles, f.Fg.Sequence(false))
 	}
-
-	b := aec.EmptyBuilder
-
-	if f.FgBright {
-		switch f.Fg {
-		case vt100.Black:
-			b = b.LightBlackF()
-		case vt100.Red:
-			b = b.LightRedF()
-		case vt100.Green:
-			b = b.LightGreenF()
-		case vt100.Yellow:
-			b = b.LightYellowF()
-		case vt100.Blue:
-			b = b.LightBlueF()
-		case vt100.Magenta:
-			b = b.LightMagentaF()
-		case vt100.Cyan:
-			b = b.LightCyanF()
-		case vt100.White:
-			b = b.LightWhiteF()
-		}
-	} else {
-		switch f.Fg {
-		case vt100.Black:
-			b = b.BlackF()
-		case vt100.Red:
-			b = b.RedF()
-		case vt100.Green:
-			b = b.GreenF()
-		case vt100.Yellow:
-			b = b.YellowF()
-		case vt100.Blue:
-			b = b.BlueF()
-		case vt100.Magenta:
-			b = b.MagentaF()
-		case vt100.Cyan:
-			b = b.CyanF()
-		case vt100.White:
-			b = b.WhiteF()
-		}
-	}
-
-	if f.BgBright {
-		switch f.Bg {
-		case vt100.Black:
-			b = b.LightBlackB()
-		case vt100.Red:
-			b = b.LightRedB()
-		case vt100.Green:
-			b = b.LightGreenB()
-		case vt100.Yellow:
-			b = b.LightYellowB()
-		case vt100.Blue:
-			b = b.LightBlueB()
-		case vt100.Magenta:
-			b = b.LightMagentaB()
-		case vt100.Cyan:
-			b = b.LightCyanB()
-		case vt100.White:
-			b = b.LightWhiteB()
-		}
-	} else {
-		switch f.Bg {
-		case vt100.Black:
-			b = b.BlackB()
-		case vt100.Red:
-			b = b.RedB()
-		case vt100.Green:
-			b = b.GreenB()
-		case vt100.Yellow:
-			b = b.YellowB()
-		case vt100.Blue:
-			b = b.BlueB()
-		case vt100.Magenta:
-			b = b.MagentaB()
-		case vt100.Cyan:
-			b = b.CyanB()
-		case vt100.White:
-			b = b.WhiteB()
-		}
+	if f.Bg != nil {
+		styles = append(styles, f.Bg.Sequence(true))
 	}
 
 	switch f.Intensity {
 	case vt100.Bold:
-		b = b.Bold()
-	case vt100.Dim:
-		b = b.Faint()
+		styles = append(styles, termenv.BoldSeq)
+	case vt100.Faint:
+		styles = append(styles, termenv.FaintSeq)
 	}
 
-	return b.ANSI.String()
+	if f.Italic {
+		styles = append(styles, termenv.ItalicSeq)
+	}
+
+	if f.Underline {
+		styles = append(styles, termenv.UnderlineSeq)
+	}
+
+	if f.Blink {
+		styles = append(styles, termenv.BlinkSeq)
+	}
+
+	if f.Reverse {
+		styles = append(styles, termenv.ReverseSeq)
+	}
+
+	if f.Conceal {
+		styles = append(styles, "8")
+	}
+
+	if f.CrossOut {
+		styles = append(styles, termenv.CrossOutSeq)
+	}
+
+	if f.Overline {
+		styles = append(styles, termenv.OverlineSeq)
+	}
+
+	var res string
+	if f.Reset || f == (vt100.Format{}) {
+		res = reset
+	}
+	if len(styles) > 0 {
+		res += fmt.Sprintf("%s%sm", termenv.CSI, strings.Join(styles, ";"))
+	}
+	return res
 }
 
 func nonAnsiLen(s string) int {

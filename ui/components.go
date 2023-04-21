@@ -2,7 +2,7 @@ package ui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/morikuni/aec"
+	"github.com/muesli/termenv"
 )
 
 type Components struct {
@@ -38,18 +38,18 @@ type Components struct {
 	Spinner tea.Model
 }
 
-var vertexID = aec.MagentaF.Apply("%d:")
+var vertexID = termenv.String("%d:").Foreground(termenv.ANSIMagenta).String()
 
 var Default = Components{
 	ConsoleRunning: "Building %s (%d/%d)",
-	ConsoleDone:    "Building %s (%d/%d) " + aec.GreenF.Apply("done"),
+	ConsoleDone:    "Building %s (%d/%d) " + termenv.String("done").Foreground(termenv.ANSIGreen).String(),
 
-	ConsoleLogFormat:                   " " + aec.LightBlackF.Apply("▕") + " %s",
-	ConsoleVertexRunning:               aec.YellowF.Apply("=> %s"),
-	ConsoleVertexCanceled:              aec.YellowF.Apply("=> %s CANCELED"),
-	ConsoleVertexErrored:               aec.RedF.Apply("=> %s ERROR"),
-	ConsoleVertexCached:                aec.BlueF.Apply("=> %s CACHED"),
-	ConsoleVertexDone:                  aec.GreenF.Apply("=> %s"),
+	ConsoleLogFormat:                   " " + termenv.String("▕").Foreground(termenv.ANSIBrightBlack).String() + " %s",
+	ConsoleVertexRunning:               termenv.String("=> %s").Foreground(termenv.ANSIYellow).String(),
+	ConsoleVertexCanceled:              termenv.String("=> %s CANCELED").Foreground(termenv.ANSIYellow).String(),
+	ConsoleVertexErrored:               termenv.String("=> %s ERROR").Foreground(termenv.ANSIRed).String(),
+	ConsoleVertexCached:                termenv.String("=> %s CACHED").Foreground(termenv.ANSIBlue).String(),
+	ConsoleVertexDone:                  termenv.String("=> %s").Foreground(termenv.ANSIGreen).String(),
 	ConsoleVertexStatus:                "-> %s",
 	ConsoleVertexStatusProgressBound:   "%.2f / %.2f",
 	ConsoleVertexStatusProgressUnbound: "%.2f",
@@ -57,20 +57,20 @@ var Default = Components{
 	TextLogFormat:                   vertexID + " %s %s",
 	TextContextSwitched:             vertexID + " ...\n",
 	TextVertexRunning:               vertexID + " %s",
-	TextVertexCanceled:              vertexID + " %s " + aec.YellowF.Apply("CANCELED"),
-	TextVertexErrored:               vertexID + " %s " + aec.RedF.Apply("ERROR: %s"),
-	TextVertexCached:                vertexID + " %s " + aec.CyanF.Apply("CACHED"),
-	TextVertexDone:                  vertexID + " %s " + aec.GreenF.Apply("DONE"),
+	TextVertexCanceled:              vertexID + " %s " + termenv.String("CANCELED").Foreground(termenv.ANSIYellow).String(),
+	TextVertexErrored:               vertexID + " %s " + termenv.String("ERROR: %s").Foreground(termenv.ANSIRed).String(),
+	TextVertexCached:                vertexID + " %s " + termenv.String("CACHED").Foreground(termenv.ANSICyan).String(),
+	TextVertexDone:                  vertexID + " %s " + termenv.String("DONE").Foreground(termenv.ANSIGreen).String(),
 	TextVertexStatus:                vertexID + " %[3]s %[2]s",
 	TextVertexStatusProgressBound:   "%.2f / %.2f",
 	TextVertexStatusProgressUnbound: "%.2f",
 	TextVertexStatusDuration:        "%.1fs",
 
 	RunningDuration: "[%.[2]*[1]fs]",
-	DoneDuration:    aec.Faint.Apply("[%.[2]*[1]fs]"),
+	DoneDuration:    termenv.String("[%.[2]*[1]fs]").Faint().String(),
 
-	ErrorLogFormat: "  " + aec.YellowF.Apply("!") + " %[2]s %[3]s",
-	ErrorHeader:    aec.YellowF.Apply("!!!") + " " + aec.RedF.Apply("%s") + "\n",
+	ErrorLogFormat: "  " + termenv.String("!").Foreground(termenv.ANSIYellow).String() + " %[2]s %[3]s",
+	ErrorHeader:    termenv.String("!!!").Foreground(termenv.ANSIYellow).String() + " " + termenv.String("%s").Foreground(termenv.ANSIRed).String() + "\n",
 	ErrorFooter:    "",
 
 	Spinner: NewRave(),

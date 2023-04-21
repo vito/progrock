@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
-	"github.com/morikuni/aec"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/graph"
 	"github.com/vito/progrock/ui"
@@ -58,7 +58,7 @@ func (recorder *Recorder) Display(interrupt context.CancelFunc, ui ui.Components
 		defer recorder.displaying.Done()
 		err := ui.DisplaySolveStatus(interrupt, w, r, tui)
 		if err != nil {
-			fmt.Fprintf(w, "%s\n", aec.RedF.Apply(fmt.Sprintf("display error: %s", err)))
+			fmt.Fprintf(w, "%s\n", termenv.String(fmt.Sprintf("display error: %s", err)).Foreground(termenv.ANSIRed))
 		}
 	}()
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fogleman/ease"
-	"github.com/morikuni/aec"
+	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -57,13 +57,13 @@ type Rave struct {
 	pos int
 }
 
-var colors = []aec.ANSI{
-	aec.RedF,
-	aec.GreenF,
-	aec.YellowF,
-	aec.BlueF,
-	aec.MagentaF,
-	aec.CyanF,
+var colors = []termenv.Color{
+	termenv.ANSIRed,
+	termenv.ANSIGreen,
+	termenv.ANSIYellow,
+	termenv.ANSIBlue,
+	termenv.ANSIMagenta,
+	termenv.ANSICyan,
 }
 
 // DefaultBPM is a sane default of 123 beats per minute.
@@ -302,7 +302,7 @@ func (rave *Rave) View() string {
 	}
 
 	if rave.track != nil && pos != -1 {
-		out = colors[pos%len(colors)].Apply(out)
+		out = termenv.String(out).Foreground(colors[pos%len(colors)]).String()
 	}
 
 	return out
