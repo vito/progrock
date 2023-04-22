@@ -23,15 +23,18 @@ type Writer interface {
 }
 
 type Recorder struct {
-	w        Writer
-	vertexes map[digest.Digest]*VertexRecorder
+	w Writer
+
+	vertexes  map[digest.Digest]*VertexRecorder
+	vertexesL sync.Mutex
 
 	displaying *sync.WaitGroup
 }
 
 func NewRecorder(w Writer) *Recorder {
 	return &Recorder{
-		w:        w,
+		w: w,
+
 		vertexes: map[digest.Digest]*VertexRecorder{},
 
 		displaying: &sync.WaitGroup{},
@@ -87,10 +90,14 @@ type VertexRecorder struct {
 	Vertex   *graph.Vertex
 	Recorder *Recorder
 
-	statuses map[string]*TaskRecorder
+	tasks     map[string]*TaskRecorder
+	statusesL sync.Mutex
 }
 
 func (recorder *Recorder) Vertex(dig digest.Digest, name string) *VertexRecorder {
+	recorder.vertexesL.Lock()
+	defer recorder.vertexesL.Unlock()
+
 	rec, found := recorder.vertexes[dig]
 	if !found {
 		now := Clock.Now()
@@ -105,7 +112,7 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string) *VertexRecorder
 				Started: &now,
 			},
 
-			statuses: map[string]*TaskRecorder{},
+			tasks: map[string]*TaskRecorder{},
 		}
 
 		recorder.vertexes[dig] = rec
@@ -174,9 +181,12 @@ func (recorder *VertexRecorder) sync() {
 }
 
 func (recorder *VertexRecorder) Task(msg string, args ...interface{}) *TaskRecorder {
+	recorder.statusesL.Lock()
+	defer recorder.statusesL.Unlock()
+
 	id := fmt.Sprintf(msg, args...)
 
-	task, found := recorder.statuses[id]
+	task, found := recorder.tasks[id]
 	if !found {
 		now := Clock.Now()
 		task = &TaskRecorder{
@@ -189,7 +199,7 @@ func (recorder *VertexRecorder) Task(msg string, args ...interface{}) *TaskRecor
 			VertexRecorder: recorder,
 		}
 
-		recorder.statuses[id] = task
+		recorder.tasks[id] = task
 	}
 
 	task.sync()
