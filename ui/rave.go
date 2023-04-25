@@ -22,6 +22,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type Spinner tea.Model
+
 type Rave struct {
 	// Show extra details useful for debugging a desynced rave.
 	ShowDetails bool
@@ -131,7 +133,7 @@ func (rave *Rave) Init() tea.Cmd {
 	ctx := context.TODO()
 
 	cmds := []tea.Cmd{
-		tick(rave.fps),
+		Frame(rave.fps),
 		rave.setFPS(DefaultBPM),
 		func() tea.Msg {
 			client, err := rave.existingAuth(ctx)
@@ -233,28 +235,28 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// NB: these might be hit at an upper layer instead; in which case it will
 	// *not* propagate.
-	case tickMsg:
-		return rave, tick(rave.fps)
-	case setFpsMsg:
+	case FrameMsg:
+		return rave, Frame(rave.fps)
+	case SetFPSMsg:
 		rave.fps = float64(msg)
 		return rave, nil
 
 	// NB: these are captured and forwarded at the outer level.
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, keys.Rave):
+		case key.Matches(msg, Keys.Rave):
 			return rave, rave.Sync()
-		case key.Matches(msg, keys.EndRave):
+		case key.Matches(msg, Keys.EndRave):
 			return rave, rave.Desync()
-		case key.Matches(msg, keys.ForwardRave):
+		case key.Matches(msg, Keys.ForwardRave):
 			rave.start = rave.start.Add(-100 * time.Millisecond)
 			rave.pos = 0 // reset and recalculate
 			return rave, nil
-		case key.Matches(msg, keys.BackwardRave):
+		case key.Matches(msg, Keys.BackwardRave):
 			rave.start = rave.start.Add(100 * time.Millisecond)
 			rave.pos = 0 // reset and recalculate
 			return rave, nil
-		case key.Matches(msg, keys.Debug):
+		case key.Matches(msg, Keys.Debug):
 			rave.ShowDetails = !rave.ShowDetails
 			return rave, nil
 		}
@@ -272,7 +274,7 @@ func (rave *Rave) setFPS(bpm float64) tea.Cmd {
 	fps *= 3 // decrease chance of missing a frame due to timing
 	rave.fps = fps
 	return tea.Cmd(func() tea.Msg {
-		return setFpsMsg(fps)
+		return SetFPSMsg(fps)
 	})
 }
 
@@ -523,4 +525,14 @@ func b64rand(bytes int) (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+type FrameMsg time.Time
+
+type SetFPSMsg float64
+
+func Frame(fps float64) tea.Cmd {
+	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
+		return FrameMsg(t)
+	})
 }

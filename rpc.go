@@ -5,8 +5,6 @@ import (
 	"net"
 	"net/rpc"
 	"sync"
-
-	"github.com/vito/progrock/graph"
 )
 
 type RPCWriter struct {
@@ -30,14 +28,14 @@ func DialRPC(net, addr string) (Writer, error) {
 	}, nil
 }
 
-func (w *RPCWriter) WriteStatus(status *graph.SolveStatus) {
+func (w *RPCWriter) WriteStatus(status *StatusUpdate) error {
 	var res NoResponse
-	_ = w.c.Call("RPCReceiver.Write", status, &res)
+	return w.c.Call("RPCReceiver.Write", status, &res)
 }
 
-func (w *RPCWriter) Close() {
+func (w *RPCWriter) Close() error {
 	var res NoResponse
-	_ = w.c.Call("RPCReceiver.Detach", &NoArgs{}, &res)
+	return w.c.Call("RPCReceiver.Detach", &NoArgs{}, &res)
 }
 
 type RPCReceiver struct {
@@ -53,9 +51,8 @@ func (recv *RPCReceiver) Attach(*NoArgs, *NoResponse) error {
 	return nil
 }
 
-func (recv *RPCReceiver) Write(status *graph.SolveStatus, res *NoResponse) error {
-	recv.w.WriteStatus(status)
-	return nil
+func (recv *RPCReceiver) Write(status *StatusUpdate, res *NoResponse) error {
+	return recv.w.WriteStatus(status)
 }
 
 func (recv *RPCReceiver) Detach(*NoArgs, *NoResponse) error {
@@ -63,9 +60,7 @@ func (recv *RPCReceiver) Detach(*NoArgs, *NoResponse) error {
 	return nil
 }
 
-func ServeRPC(l net.Listener) (ChanReader, Writer, error) {
-	r, w := Pipe()
-
+func ServeRPC(l net.Listener, w Writer) (Writer, error) {
 	wg := new(sync.WaitGroup)
 
 	recv := &RPCReceiver{
@@ -76,12 +71,12 @@ func ServeRPC(l net.Listener) (ChanReader, Writer, error) {
 	s := rpc.NewServer()
 	err := s.Register(recv)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	go s.Accept(l)
 
-	return r, WaitWriter{
+	return WaitWriter{
 		Writer: w,
 
 		attachedClients: wg,
@@ -93,7 +88,7 @@ type WaitWriter struct {
 	attachedClients *sync.WaitGroup
 }
 
-func (ww WaitWriter) Close() {
+func (ww WaitWriter) Close() error {
 	ww.attachedClients.Wait()
-	ww.Writer.Close()
+	return ww.Writer.Close()
 }

@@ -2,8 +2,6 @@ package progrock
 
 import (
 	"sync"
-
-	"github.com/vito/progrock/graph"
 )
 
 // PipeBuffer is the number of writes to allow before a read must occur.
@@ -18,41 +16,45 @@ import (
 // Refactors welcome.
 const PipeBuffer = 100
 
-func Pipe() (ChanReader, Writer) {
-	ch := make(chan *graph.SolveStatus, PipeBuffer)
-	return ch, &ChanWriter{ch: ch}
+func BlockingPipe() (Reader, Writer) {
+	ch := make(chan *StatusUpdate, PipeBuffer)
+	return ChanReader(ch), &ChanWriter{ch: ch}
 }
 
 type ChanWriter struct {
-	ch chan<- *graph.SolveStatus
+	ch chan<- *StatusUpdate
 
 	sync.Mutex
 }
 
-func (doc *ChanWriter) WriteStatus(v *graph.SolveStatus) {
+func (doc *ChanWriter) WriteStatus(v *StatusUpdate) error {
 	doc.Lock()
 	defer doc.Unlock()
 
 	if doc.ch == nil {
 		// discard
-		return
+		return nil
 	}
 
 	doc.ch <- v
+	return nil
 }
 
-func (doc *ChanWriter) Close() {
+func (doc *ChanWriter) Close() error {
 	doc.Lock()
 	if doc.ch != nil {
 		close(doc.ch)
 		doc.ch = nil
 	}
 	doc.Unlock()
+	return nil
 }
 
-type ChanReader <-chan *graph.SolveStatus
+type ChanReader <-chan *StatusUpdate
 
-func (ch ChanReader) ReadStatus() (*graph.SolveStatus, bool) {
+var _ Reader = ChanReader(nil)
+
+func (ch ChanReader) ReadStatus() (*StatusUpdate, bool) {
 	val, ok := <-ch
 	return val, ok
 }

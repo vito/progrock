@@ -9,18 +9,17 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
-	"github.com/vito/progrock/ui"
 )
 
 func main() {
-	r, w := progrock.Pipe()
-	rec := progrock.NewRecorder(w)
+	casette := progrock.NewCasette()
+	rec := progrock.NewRecorder(casette)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rec.Display(cancel, ui.Default, os.Stderr, r, true)
-	defer rec.Stop()
+	stop := progrock.DefaultUI().RenderLoop(cancel, casette, os.Stderr, true)
+	defer stop()
 
 	failed := rec.Vertex("failed vertex", "failed vertex")
 	failed.Task("finished task").Complete()
@@ -37,7 +36,8 @@ func main() {
 
 	wg := new(sync.WaitGroup)
 
-	for v := 0; v < 3; v++ {
+dance:
+	for v := 0; v < 30; v++ {
 		v := v
 
 		succeeds := rec.Vertex(
@@ -48,31 +48,60 @@ func main() {
 		count := succeeds.Task("counting task")
 		count.Start()
 
+		prog := succeeds.ProgressTask(42, "barring task")
+		prog.Start()
 		wg.Add(1)
 		go func() {
+			defer wg.Done()
+			defer prog.Done(nil)
+			for i := int64(0); i <= prog.Task.Total; i++ {
+				select {
+				case <-time.After(100 * time.Millisecond):
+				case <-ctx.Done():
+					return
+				}
+
+				prog.Current(i)
+			}
+		}()
+
+		subVtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
+
+		wg.Add(1)
+		go func() {
+			defer cancel()
 			defer wg.Done()
 
 			time.Sleep(500 * time.Millisecond)
 
-			for i := int64(0); ctx.Err() == nil; i++ {
-				fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
-				fmt.Fprintf(succeeds.Stderr(), "stderr %d\n", i)
+			for i := int64(0); subVtx.Err() == nil; i++ {
+				if i%2 == 0 {
+					fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
+				} else {
+					fmt.Fprintf(succeeds.Stderr(), "stderr %d\n", i)
+				}
 
 				select {
 				case <-time.After(500 * time.Millisecond):
-				case <-ctx.Done():
+				case <-subVtx.Done():
 				}
 			}
 
-			fmt.Fprintln(succeeds.Stdout(), "done")
-			fmt.Fprintln(succeeds.Stderr(), "done")
+			fmt.Fprintln(succeeds.Stdout(), "stdout done")
+			fmt.Fprintln(succeeds.Stderr(), "stderr done")
 			count.Complete()
 
 			succeeds.Complete()
 		}()
+
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			break dance
+		}
 	}
 
 	wg.Wait()
 
-	w.Close()
+	rec.Close()
 }

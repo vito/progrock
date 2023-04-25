@@ -1,0 +1,98 @@
+syntax = "proto3";
+package progrock;
+
+option go_package = "github.com/vito/progrock";
+
+import "google/protobuf/timestamp.proto";
+
+// StatusUpdate contains a snapshot of state updates for the graph.
+message StatusUpdate {
+  // Vertexes contains the set of updated vertexes.
+  repeated Vertex vertexes = 1;
+  // Tasks contains the set of updated tasks.
+  repeated VertexTask tasks = 2;
+  // Logs contains the set of new log output.
+  repeated VertexLog logs = 3;
+};
+
+// Group is used to group related vertexes.
+message Group {
+  // ID is an arbitrary identifier for the group.
+  required string id = 1;
+  optional string parent = 2;
+  required string name = 3;
+  optional string description = 4;
+  repeated Label labels = 5;
+};
+
+message Label {
+  string name = 1;
+  string value = 2;
+};
+
+// Vertex is a node in the graph of work to be done.
+message Vertex {
+  // ID is a unique identifier for the vertex, such as a digest.
+  string id = 1;
+  // Name is a user-visible name for the vertex.
+  string name = 2;
+  // Inputs contains IDs of vertices that this vertex depends on.
+  repeated string inputs = 3;
+  // Outputs contains IDs of vertices that this vertex created.
+  //
+  // The intention is to allow a vertex to express that it created other
+  // vertexes which may not maintain an input relationship to its creator, for
+  // example an API request that created an object that may have otherwise been
+  // created in some other way.
+  repeated string outputs = 4;
+  // Started is the time that the vertex started evaluating.
+  optional google.protobuf.Timestamp started = 5;
+  // Completed is the time that the vertex finished evaluating.
+  optional google.protobuf.Timestamp completed = 6;
+  // Cached indicates whether the vertex resulted in a cache hit.
+  bool cached = 7;
+  // Error is the error message, if any, that occurred while evaluating the
+  // vertex.
+  optional string error = 8;
+  // Canceled indicates whether the vertex was interrupted.
+  bool canceled = 9;
+  // Internal indicates that the vertex should not visible to the user by
+  // default, but may be revealed with a flag.
+  bool internal = 10;
+  // Group associates the vertex to a group.
+  optional string group = 11;
+}
+
+// VertexTask is a task that a vertex is performing.
+message VertexTask {
+  // Vertex is the ID of the vertex that is performing the task.
+  string vertex = 1;
+  // Name is the user-visible name of the task.
+  string name = 2;
+  // Total is the total number of units of work to be done, such as the number
+  // of bytes to be downloaded.
+  int64 total = 3;
+  // Current is the number of units of work that have been completed.
+  int64 current = 4;
+  // Started is the time that the task started.
+  optional google.protobuf.Timestamp started = 5;
+  // Completed is the time that the task finished.
+  optional google.protobuf.Timestamp completed = 6;
+}
+
+// VertexLog is a log message from a vertex.
+message VertexLog {
+  // Vertex is the ID of the vertex that emitted the log message.
+  string vertex = 1;
+  // Stream is the stream that the log message was emitted to.
+  LogStream stream = 2;
+  // Data is the chunk of log output.
+  bytes data = 3;
+  // Timestamp is the time that the log message was emitted.
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+enum LogStream {
+  STDOUT = 0;
+  STDERR = 1;
+}
