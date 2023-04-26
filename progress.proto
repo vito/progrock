@@ -13,20 +13,34 @@ message StatusUpdate {
   repeated VertexTask tasks = 2;
   // Logs contains the set of new log output.
   repeated VertexLog logs = 3;
+  // Groups contains a set of updated groups.
+  repeated Group groups = 4;
 };
 
 // Group is used to group related vertexes.
 message Group {
   // ID is an arbitrary identifier for the group.
   string id = 1;
+  // Parent is the ID of a parent group.
   optional string parent = 2;
+  // Name is a name for this group, relative to its parent.
   string name = 3;
-  optional string description = 4;
-  repeated Label labels = 5;
+  // Labels contains a series of name/value pairs.
+  repeated Label labels = 4;
+  // Started is the timestamp that the group started.
+  google.protobuf.Timestamp started = 5;
+  // Completed is the timestamp that the group completed.
+  optional google.protobuf.Timestamp completed = 6;
 };
 
+// Label is a name/value pair used for annotation.
 message Label {
+  // Name is the name of the label.
+  //
+  // Domain prefixes are a convention for disambiguation, such as
+  // progrock.io/foo.
   string name = 1;
+  // Value is the value of the label.
   string value = 2;
 };
 
