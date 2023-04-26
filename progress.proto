@@ -18,9 +18,9 @@ message StatusUpdate {
 // Group is used to group related vertexes.
 message Group {
   // ID is an arbitrary identifier for the group.
-  required string id = 1;
+  string id = 1;
   optional string parent = 2;
-  required string name = 3;
+  string name = 3;
   optional string description = 4;
   repeated Label labels = 5;
 };
