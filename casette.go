@@ -310,7 +310,7 @@ func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 
 func groupColor(i int, str string) string {
 	return termenv.String(str).Foreground(
-		termenv.ANSIColor(i%15) + 1,
+		termenv.ANSIColor(i%8) + 4,
 	).String()
 }
 
