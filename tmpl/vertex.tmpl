@@ -1,15 +1,15 @@
 {{- if .Canceled -}}
-{{- Foreground "11" (printf "=> %s ERROR" .Name) -}}
+{{- Foreground "11" (printf "%s ERROR" .Name) -}}
 {{- else if .Error -}}
-{{- Foreground "1" (printf "=> %s ERROR" .Name) -}}
+{{- Foreground "1" (printf "%s ERROR" .Name) -}}
 {{- else if .Cached -}}
-{{- Foreground "4" (printf "=> %s CACHED" .Name) -}}
+{{- Foreground "4" (printf "%s CACHED" .Name) -}}
 {{- else if .Completed -}}
-{{- Foreground "2" (printf "=> %s" .Name) -}}
+{{- Foreground "2" (printf "%s" .Name) -}}
 {{- else if .Started -}}
-{{- Foreground "3" (printf "=> %s" .Name) -}}
+{{- Foreground "3" (printf "%s" .Name) -}}
 {{- else -}}
-{{- Foreground "8" (printf "=> %s" .Name) -}}
+{{- Foreground "8" (printf "%s" .Name) -}}
 {{- end -}}
 {{- " " -}}
 {{- if not .Cached -}}

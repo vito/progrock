@@ -9,17 +9,21 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/vito/vt100"
 )
 
 type Vterm struct {
+	Offset int
+	Height int
+	Width  int
+
+	Prefix string
+
 	vt *vt100.VT100
 
 	viewBuf *bytes.Buffer
-
-	Offset int
-	Height int
 }
 
 var debugVterm = os.Getenv("_DEBUG_VTERM") != ""
@@ -33,6 +37,7 @@ func NewVterm(width int) *Vterm {
 	return &Vterm{
 		vt:      vt,
 		viewBuf: new(bytes.Buffer),
+		Width:   width,
 	}
 }
 
@@ -69,7 +74,13 @@ func (term *Vterm) SetHeight(height int) {
 }
 
 func (term *Vterm) SetWidth(width int) {
-	term.vt.Resize(term.vt.Height, width)
+	term.Width = width
+	term.vt.Resize(term.vt.Height, width-lipgloss.Width(term.Prefix))
+}
+
+func (term *Vterm) SetPrefix(prefix string) {
+	term.Prefix = prefix
+	term.vt.Resize(term.vt.Height, term.Width-lipgloss.Width(prefix))
 }
 
 func (term *Vterm) Init() tea.Cmd {
@@ -113,7 +124,7 @@ func (term *Vterm) View() string {
 	buf.Reset()
 
 	var lines int
-	for row, l := range term.vt.Content {
+	for row, line := range term.vt.Content {
 		if row < term.Offset {
 			continue
 		}
@@ -121,9 +132,11 @@ func (term *Vterm) View() string {
 			break
 		}
 
+		buf.WriteString(term.Prefix)
+
 		var lastFormat vt100.Format
 
-		for col, r := range l {
+		for col, r := range line {
 			f := term.vt.Format[row][col]
 
 			if f != lastFormat {

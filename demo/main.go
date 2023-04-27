@@ -4,12 +4,28 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
+
+func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...string) {
+	cmdline := strings.Join(append([]string{exe}, args...), " ")
+
+	okVtx := rec.Vertex(
+		digest.FromString(fmt.Sprintf("%d", time.Now().UnixNano())),
+		cmdline,
+	)
+
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Stdout = okVtx.Stdout()
+	cmd.Stderr = okVtx.Stderr()
+	okVtx.Done(cmd.Run())
+}
 
 func main() {
 	casette := progrock.NewCasette()
@@ -21,29 +37,28 @@ func main() {
 	stop := progrock.DefaultUI().RenderLoop(cancel, casette, os.Stderr, true)
 	defer stop()
 
-	failed := rec.Vertex("failed vertex", "failed vertex")
-	failed.Task("finished task").Complete()
-	fmt.Fprintln(failed.Stderr(), "some failed vertex logs")
-	fmt.Fprintln(failed.Stderr(), "some more failed vertex logs")
-	fmt.Fprintln(failed.Stderr(), "even more failed vertex logs")
-	failed.Done(fmt.Errorf("bam"))
+	failedVtx := rec.Vertex("failed", "failed task in vertex")
+	// failedVtx.Task("errored task")
+	fmt.Fprintln(failedVtx.Stderr(), "some failed task logs")
+	failedVtx.Done(fmt.Errorf("oh noes"))
 
-	failedTask := rec.Vertex("failed", "failed task in vertex")
-	failedTask.Task("errored task")
-	fmt.Fprintln(failedTask.Stderr(), "some failed task logs")
-	fmt.Fprintln(failedTask.Stderr(), "some more failed task logs")
-	failedTask.Done(fmt.Errorf("oh noes"))
+	cmdVtx(ctx, rec, "ls", "-al")
+	cmdVtx(ctx, rec, "sh", "-c", "echo imma fail && echo any moment now && exit 1")
 
 	wg := new(sync.WaitGroup)
 
 dance:
-	for v := 0; v < 30; v++ {
+	for v := 0; v < 10; v++ {
 		v := v
 
-		succeeds := rec.Vertex(
+		group := rec.WithGroup(fmt.Sprintf("group %d", v))
+
+		succeeds := group.Vertex(
 			digest.Digest(fmt.Sprintf("log-and-count-%d", v)),
 			fmt.Sprintf("count and log: #%d", v+1),
 		)
+
+		fmt.Fprintf(succeeds.Stdout(), "group: %s\n", group.Group.Id)
 
 		count := succeeds.Task("counting task")
 		count.Start()
@@ -93,6 +108,11 @@ dance:
 
 			succeeds.Complete()
 		}()
+
+		if v%2 == 0 {
+			subGroup := group.WithGroup(fmt.Sprintf("sub-group %d", v))
+			go cmdVtx(subVtx, subGroup, "sh", "-c", "echo hello")
+		}
 
 		select {
 		case <-time.After(time.Second):

@@ -1,5 +1,0 @@
-{{if .Completed -}}
-{{Foreground "8" (printf "[%.[2]*[1]fs]" .Duration.Seconds .Precision) -}}
-{{else -}}
-{{printf "[%.[2]*[1]fs]" .Duration.Seconds .Precision -}}
-{{end -}}

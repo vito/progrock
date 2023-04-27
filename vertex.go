@@ -25,6 +25,8 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, inputs ...diges
 		Name: name,
 
 		Started: timestamppb.New(now),
+
+		Group: &recorder.Group.Id,
 	}
 
 	for _, input := range inputs {
@@ -69,9 +71,10 @@ func (recorder *VertexRecorder) Complete() {
 
 func (recorder *VertexRecorder) Error(err error) {
 	msg := err.Error()
-	recorder.Vertex.Error = &msg
 	if errors.Is(err, context.Canceled) || strings.HasSuffix(err.Error(), context.Canceled.Error()) {
 		recorder.Vertex.Canceled = true
+	} else {
+		recorder.Vertex.Error = &msg
 	}
 	recorder.sync()
 }

@@ -1,1 +1,1 @@
--> {{.Name}} {{if .Total}}{{bar .Current .Total}}{{end}} {{Foreground "8" (printf "[%s]" (.Duration | duration))}}
+{{.Name}} {{if .Total}}{{bar .Current .Total}}{{end}} {{Foreground "8" (printf "[%s]" (.Duration | duration))}}

@@ -11,9 +11,11 @@ import (
 // Clock is used to determine the current time.
 var Clock = clockwork.NewRealClock()
 
+// Recorder is a Writer that also tracks a current group.
 type Recorder struct {
 	w Writer
-	g *Group
+
+	Group *Group
 }
 
 // RootGroup is the name of the toplevel group, which is blank.
@@ -26,17 +28,27 @@ const RootGroup = ""
 func NewRecorder(w Writer, labels ...*Label) *Recorder {
 	return (&Recorder{
 		w: w,
-	}).Group(RootGroup, labels...)
+	}).WithGroup(RootGroup, labels...)
 }
 
 // Record sends a deep-copy of the status update to the Writer.
 func (recorder *Recorder) Record(status *StatusUpdate) {
 	// perform a deep-copy so buffered writes don't get mutated, similar to
 	// copying in Write([]byte) when []byte comes from sync.Pool
-	recorder.w.WriteStatus(proto.Clone(status).(*StatusUpdate))
+	update := proto.Clone(status).(*StatusUpdate)
+
+	for _, vertex := range update.Vertexes {
+		if vertex.Group == nil {
+			vertex.Group = &recorder.Group.Id
+		}
+	}
+
+	recorder.w.WriteStatus(update)
 }
 
-func (recorder *Recorder) Group(name string, labels ...*Label) *Recorder {
+// WithGroup creates a new group with the given name and labels, and sends a
+// progress update.
+func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
 	now := Clock.Now()
 
 	id := fmt.Sprintf("%s@%d", name, now.UnixNano())
@@ -48,29 +60,34 @@ func (recorder *Recorder) Group(name string, labels ...*Label) *Recorder {
 		Started: timestamppb.New(now),
 	}
 
-	if recorder.g != nil {
-		g.Parent = &recorder.g.Id
+	if recorder.Group != nil {
+		g.Parent = &recorder.Group.Id
 	}
 
-	recorder.sync()
-
-	return &Recorder{
-		w: recorder.w,
-		g: g,
+	subRecorder := &Recorder{
+		w:     recorder.w,
+		Group: g,
 	}
+
+	subRecorder.sync()
+
+	return subRecorder
 }
 
+// Complete marks the current group as complete, and sends a progress update.
 func (recorder *Recorder) Complete() {
-	recorder.g.Completed = timestamppb.New(Clock.Now())
+	recorder.Group.Completed = timestamppb.New(Clock.Now())
 	recorder.sync()
 }
 
+// Close closes the underlying Writer.
 func (recorder *Recorder) Close() error {
 	return recorder.w.Close()
 }
 
+// sync sends a progress update for the current group.
 func (recorder *Recorder) sync() {
 	recorder.Record(&StatusUpdate{
-		Groups: []*Group{recorder.g},
+		Groups: []*Group{recorder.Group},
 	})
 }
