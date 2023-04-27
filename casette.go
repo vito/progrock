@@ -155,7 +155,11 @@ func (groups Groups) Shrink() Groups {
 	return groups
 }
 
-func (groups Groups) Add(w io.Writer, u *UI, group *Group) Groups {
+func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group *Group) Groups {
+	if len(groups) == 0 && group.Name == RootGroup {
+		return []*Group{group}
+	}
+
 	parentIdx := -1
 	for i, g := range groups {
 		if g == nil {
