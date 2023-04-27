@@ -126,7 +126,7 @@ func (casette *Casette) SetWindowSize(w, h int) {
 type Groups []*Group
 
 const (
-	dot      = "●"
+	dot      = "█"
 	emptyDot = "○"
 	vBar     = "│"
 	hBar     = "─"
