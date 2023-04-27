@@ -458,6 +458,8 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		}
 	}
 
+	groups.Reap(w, u, casette.groups, nil)
+
 	debug.SetHeight(10)
 	fmt.Fprint(w, debug.View())
 
