@@ -130,8 +130,9 @@ const (
 	emptyDot = "○"
 	vBar     = "│"
 	hBar     = "─"
+	hdBar    = "╴"
 	tBar     = "┼"
-	dBar     = "┊" // ┃┇┋┊
+	dBar     = "┊" // ┃┊┆┇┋╎
 	blCorner = "╰"
 	tlCorner = "╭"
 	trCorner = "╮"
@@ -246,6 +247,9 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 			(vtx.Group == nil && g.Name == RootGroup) {
 			symbol = ch
 			vtxIdx = i
+		} else if vtxIdx != -1 && i >= vtxIdx {
+			// line between parent and added line
+			symbol = vlBar
 		} else {
 			symbol = dBar
 		}
@@ -253,7 +257,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 		fmt.Fprint(w, groupColor(i, symbol))
 
 		if vtxIdx != -1 && i >= vtxIdx && i < len(groups)-1 {
-			fmt.Fprint(w, groupColor(vtxIdx, hBar))
+			fmt.Fprint(w, groupColor(vtxIdx, hdBar))
 		} else {
 			fmt.Fprint(w, " ")
 		}
