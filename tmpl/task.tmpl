@@ -1,1 +1,8 @@
-{{.Name}} {{if .Total}}{{bar .Current .Total}}{{end}} {{Foreground "8" (printf "[%s]" (.Duration | duration))}}
+{{- Foreground "8" (printf "[%s]" (.Duration | duration)) -}}
+{{- if .Total -}}
+  {{- " " -}}
+  {{bar .Current .Total}}
+{{- end -}}
+{{- " " -}}
+{{- .Name -}}
+{{- "" }}

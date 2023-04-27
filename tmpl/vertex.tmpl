@@ -1,18 +1,14 @@
 {{- if .Canceled -}}
-{{- Foreground "11" (printf "%s ERROR" .Name) -}}
+{{- Foreground "11" "CANCELED" -}}
 {{- else if .Error -}}
-{{- Foreground "1" (printf "%s ERROR" .Name) -}}
+{{- Foreground "1" "ERROR" -}}
 {{- else if .Cached -}}
-{{- Foreground "4" (printf "%s CACHED" .Name) -}}
-{{- else if .Completed -}}
-{{- Foreground "2" (printf "%s" .Name) -}}
-{{- else if .Started -}}
-{{- Foreground "3" (printf "%s" .Name) -}}
+{{- Foreground "4" "CACHED" -}}
+{{- else if and .Started (not .Completed) -}}
+{{- Foreground "3" (printf "[%s]" (.Duration | duration)) -}}
 {{- else -}}
-{{- Foreground "8" (printf "%s" .Name) -}}
-{{- end -}}
-{{- " " -}}
-{{- if not .Cached -}}
 {{- Foreground "8" (printf "[%s]" (.Duration | duration)) -}}
 {{- end -}}
+{{- " " -}}
+{{- .Name -}}
 {{- "" }}
