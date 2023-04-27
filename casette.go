@@ -366,6 +366,17 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 	return groups.Shrink()
 }
 
+var pulse ui.Frames
+
+func init() {
+	pulse = ui.Frames{}
+	copy(pulse[:], ui.FadeFrames[:])
+	lastFrame := (ui.FramesPerBeat / 4) * 3
+	for i := lastFrame; i < len(pulse); i++ {
+		pulse[i] = ui.FadeFrames[lastFrame]
+	}
+}
+
 func (casette *Casette) Render(w io.Writer, u *UI) error {
 	casette.l.Lock()
 	defer casette.l.Unlock()
@@ -424,7 +435,12 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 	for i, vtx := range runningAndFailed {
 		groups.Reap(w, u, casette.groups, runningAndFailed[i:])
 
-		groups.VertexPrefix(w, u, vtx, dot)
+		symbol := dot
+		if vtx.Completed == nil {
+			symbol, _, _ = u.Spinner.ViewFrame(pulse)
+		}
+
+		groups.VertexPrefix(w, u, vtx, symbol)
 		if err := u.RenderVertex(w, vtx); err != nil {
 			return err
 		}

@@ -227,8 +227,6 @@ func (m *Model) SetWindowSize(w, h int) {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -239,7 +237,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.ShowAll = !m.help.ShowAll
 		}
 
-		m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
+		s, cmd := m.ui.Spinner.Update(msg)
+		m.ui.Spinner = s.(ui.Spinner)
 		cmds = append(cmds, cmd)
 
 	case tea.WindowSizeMsg:
@@ -261,7 +260,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fps = float64(msg)
 
 	default:
-		m.ui.Spinner, cmd = m.ui.Spinner.Update(msg)
+		s, cmd := m.ui.Spinner.Update(msg)
+		m.ui.Spinner = s.(ui.Spinner)
 		cmds = append(cmds, cmd)
 
 		m.viewport, cmd = m.viewport.Update(msg)

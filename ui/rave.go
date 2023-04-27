@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -22,7 +21,12 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type Spinner tea.Model
+type Spinner interface {
+	tea.Model
+
+	ViewFancy() string
+	ViewFrame(Frames) (string, time.Time, int)
+}
 
 type Rave struct {
 	// Show extra details useful for debugging a desynced rave.
@@ -38,7 +42,7 @@ type Rave struct {
 	SpotifyTokenPath string
 
 	// The animation to display.
-	Frames [FramesPerBeat]string
+	Frames Frames
 
 	// transmits an authenticated Spotify client during the auth callback flow
 	spotifyAuthState    string
@@ -59,6 +63,8 @@ type Rave struct {
 	pos int
 }
 
+var _ Spinner = &Rave{}
+
 var colors = []termenv.Color{
 	termenv.ANSIRed,
 	termenv.ANSIGreen,
@@ -74,6 +80,9 @@ const DefaultBPM = 123
 // FramesPerBeat determines the granularity that the spinner's animation timing
 // for each beat, i.e. 10 for tenths of a second.
 const FramesPerBeat = 10
+
+// Frames contains animation frames.
+type Frames [FramesPerBeat]string
 
 var MeterFrames = [FramesPerBeat]string{
 	0: "█",
@@ -279,11 +288,27 @@ func (rave *Rave) setFPS(bpm float64) tea.Cmd {
 }
 
 func (rave *Rave) View() string {
+	frame, _, _ := rave.ViewFrame(rave.Frames)
+	return frame
+}
+
+func (rave *Rave) ViewFancy() string {
+	frame, now, pos := rave.ViewFrame(rave.Frames)
+	if rave.ShowDetails {
+		frame += " " + rave.viewDetails(now, pos)
+	}
+
+	if rave.track != nil && pos != -1 {
+		frame = termenv.String(frame).Foreground(colors[pos%len(colors)]).String()
+	}
+
+	return frame
+}
+
+func (rave *Rave) ViewFrame(frames Frames) (string, time.Time, int) {
 	now := time.Now()
 
 	pos, pct := rave.Progress(now)
-
-	var out string
 
 	frame := int(ease.InOutCubic(pct) * 10)
 
@@ -295,19 +320,7 @@ func (rave *Rave) View() string {
 		frame = FramesPerBeat - 1
 	}
 
-	out += rave.Frames[frame]
-
-	out = strings.Repeat(out, 2)
-
-	if rave.ShowDetails {
-		out += " " + rave.viewDetails(now, pos)
-	}
-
-	if rave.track != nil && pos != -1 {
-		out = termenv.String(out).Foreground(colors[pos%len(colors)]).String()
-	}
-
-	return out
+	return frames[frame], now, pos
 }
 
 func (model *Rave) viewDetails(now time.Time, pos int) string {
