@@ -173,6 +173,12 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 		}
 	}
 
+	if parentIdx == -1 {
+		parent := allGroups[group.GetParent()]
+		groups = groups.Add(w, u, allGroups, parent)
+		return groups.Add(w, u, allGroups, group)
+	}
+
 	var added bool
 	var addedIdx int
 	for i, c := range groups {
@@ -208,7 +214,7 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 			// line right from parent and down to added line
 			fmt.Fprint(w, groupColor(addedIdx, tlCorner))
 			fmt.Fprint(w, " ")
-		} else if addedIdx > parentIdx && i > parentIdx && i < addedIdx {
+		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
 			// line between parent and added line
 			fmt.Fprint(w, groupColor(i, tBar))
 			fmt.Fprint(w, groupColor(addedIdx, hBar))
@@ -325,6 +331,7 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 				}
 			}
 		}
+
 		if !isActive {
 			reaped[i] = true
 			groups[i] = nil
@@ -378,7 +385,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		if group == nil {
 			fmt.Fprintln(debug, "group is nil:", *vtx.Group)
 		} else {
-			groups = groups.Add(w, u, group)
+			groups = groups.Add(w, u, casette.groups, group)
 		}
 
 		if vtx.Completed == nil {
