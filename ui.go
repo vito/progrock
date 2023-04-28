@@ -57,6 +57,9 @@ func NewUI(spinner ui.Spinner) *UI {
 				bar.ShowPercentage = false
 				return bar.ViewAs(float64(current) / float64(total))
 			},
+			"words": func(s string) string {
+				return strings.Join(strings.Fields(s), " ")
+			},
 		})
 	return ui
 }

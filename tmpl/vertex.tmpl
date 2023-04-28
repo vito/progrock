@@ -10,5 +10,5 @@
 {{- Foreground "8" (printf "[%s]" (.Duration | duration)) -}}
 {{- end -}}
 {{- " " -}}
-{{- .Name -}}
+{{- .Name | words -}}
 {{- "" }}
