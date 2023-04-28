@@ -333,11 +333,11 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 			continue
 		}
 
-		if allGroups[g.Id].Completed == nil {
-			// let groups linger as long as they're not completed, otherwise future
-			// child groups will be orphaned
-			continue
-		}
+		// if allGroups[g.Id].Completed == nil {
+		// 	// let groups linger as long as they're not completed, otherwise future
+		// 	// child groups will be orphaned
+		// 	continue
+		// }
 
 		var isActive bool
 		for _, a := range active {
