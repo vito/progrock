@@ -2,6 +2,7 @@ package progrock
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/proto"
@@ -16,6 +17,9 @@ type Recorder struct {
 	w Writer
 
 	Group *Group
+
+	groups  map[string]*Recorder
+	groupsL sync.Mutex
 }
 
 // RootGroup is the name of the toplevel group, which is blank.
@@ -26,13 +30,18 @@ const RootGroup = ""
 // It also initializes the "root" group with the associated labels, which
 // involves sending a progress update for the group.
 func NewRecorder(w Writer, labels ...*Label) *Recorder {
-	return (&Recorder{
-		w: w,
-	}).WithGroup(RootGroup, labels...)
+	return newEmptyRecorder(w).WithGroup(RootGroup, labels...)
+}
+
+func newEmptyRecorder(w Writer) *Recorder {
+	return &Recorder{
+		w:      w,
+		groups: map[string]*Recorder{},
+	}
 }
 
 // Record sends a deep-copy of the status update to the Writer.
-func (recorder *Recorder) Record(status *StatusUpdate) {
+func (recorder *Recorder) Record(status *StatusUpdate) error {
 	// perform a deep-copy so buffered writes don't get mutated, similar to
 	// copying in Write([]byte) when []byte comes from sync.Pool
 	update := proto.Clone(status).(*StatusUpdate)
@@ -43,12 +52,24 @@ func (recorder *Recorder) Record(status *StatusUpdate) {
 		}
 	}
 
-	recorder.w.WriteStatus(update)
+	return recorder.w.WriteStatus(update)
 }
 
-// WithGroup creates a new group with the given name and labels, and sends a
+// WithGroup creates a new group with the given name and labels and sends a
 // progress update.
+//
+// Calling WithGroup with the same name will always return the same Recorder
+// instance so that you can record to a single hierarchy of groups. When the
+// group already exists, the labels argument is ignored.
 func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
+	recorder.groupsL.Lock()
+	defer recorder.groupsL.Unlock()
+
+	existing, found := recorder.groups[name]
+	if found {
+		return existing
+	}
+
 	now := Clock.Now()
 
 	id := fmt.Sprintf("%s@%d", name, now.UnixNano())
@@ -64,18 +85,21 @@ func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
 		g.Parent = &recorder.Group.Id
 	}
 
-	subRecorder := &Recorder{
-		w:     recorder.w,
-		Group: g,
-	}
-
+	subRecorder := newEmptyRecorder(recorder.w)
+	subRecorder.Group = g
 	subRecorder.sync()
+
+	recorder.groups[name] = subRecorder
 
 	return subRecorder
 }
 
-// Complete marks the current group as complete, and sends a progress update.
+// Complete marks the current group and all sub-groups as complete, and sends a
+// progress update for each.
 func (recorder *Recorder) Complete() {
+	for _, g := range recorder.groups {
+		g.Complete()
+	}
 	recorder.Group.Completed = timestamppb.New(Clock.Now())
 	recorder.sync()
 }
