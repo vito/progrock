@@ -21,6 +21,8 @@ type Casette struct {
 
 	width, height int
 
+	showInternal bool
+
 	l sync.Mutex
 }
 
@@ -110,6 +112,12 @@ func (casette *Casette) Close() error {
 	casette.done = true
 	casette.l.Unlock()
 	return nil
+}
+
+func (casette *Casette) ShowInternal(show bool) {
+	casette.l.Lock()
+	defer casette.l.Unlock()
+	casette.showInternal = show
 }
 
 func (casette *Casette) SetWindowSize(w, h int) {
@@ -402,7 +410,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		_ = i
 		vtx := casette.vertexes[dig]
 
-		if vtx.Internal {
+		if vtx.Internal && !casette.showInternal {
 			// skip internal vertices
 			continue
 		}
