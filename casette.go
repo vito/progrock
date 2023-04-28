@@ -130,7 +130,8 @@ const (
 	emptyDot = "○"
 	vBar     = "│"
 	hBar     = "─"
-	hdBar    = "╴"
+	hdlBar   = "╴"
+	hdrBar   = "╶"
 	tBar     = "┼"
 	dBar     = "┊" // ┃┊┆┇┋╎
 	blCorner = "╰"
@@ -212,10 +213,14 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 			fmt.Fprint(w, groupColor(addedIdx, trCorner))
 			fmt.Fprint(w, " ")
 		} else if i == addedIdx && addedIdx < parentIdx {
-			// line right from parent and down to added line
+			// line up from added line and right to parent
 			fmt.Fprint(w, groupColor(addedIdx, tlCorner))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
+			// line between parent and added line
+			fmt.Fprint(w, groupColor(i, tBar))
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
+		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
 			// line between parent and added line
 			fmt.Fprint(w, groupColor(i, tBar))
 			fmt.Fprint(w, groupColor(addedIdx, hBar))
@@ -242,7 +247,11 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 	for i, g := range groups {
 		var symbol string
 		if g == nil {
-			symbol = " "
+			if vtxIdx != -1 && i >= vtxIdx {
+				symbol = hdlBar
+			} else {
+				symbol = " "
+			}
 		} else if (vtx.Group != nil && *vtx.Group == g.Id) ||
 			(vtx.Group == nil && g.Name == RootGroup) {
 			symbol = ch
@@ -257,7 +266,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 		fmt.Fprint(w, groupColor(i, symbol))
 
 		if vtxIdx != -1 && i >= vtxIdx && i < len(groups)-1 {
-			fmt.Fprint(w, groupColor(vtxIdx, hdBar))
+			fmt.Fprint(w, groupColor(vtxIdx, hdlBar))
 		} else {
 			fmt.Fprint(w, " ")
 		}
@@ -275,6 +284,9 @@ func (groups Groups) GroupPrefix(w io.Writer, u *UI, group *Group) {
 		} else if group.Id == g.Id {
 			symbol = "▼"
 			vtxIdx = i
+		} else if vtxIdx != -1 && i >= vtxIdx {
+			// line between parent and added line
+			symbol = vlBar
 		} else {
 			symbol = dBar
 		}
@@ -282,7 +294,7 @@ func (groups Groups) GroupPrefix(w io.Writer, u *UI, group *Group) {
 		fmt.Fprint(w, groupColor(i, symbol))
 
 		if vtxIdx != -1 && i >= vtxIdx && i < len(groups)-1 {
-			fmt.Fprint(w, groupColor(vtxIdx, hBar))
+			fmt.Fprint(w, groupColor(vtxIdx, hdlBar))
 		} else {
 			fmt.Fprint(w, " ")
 		}
