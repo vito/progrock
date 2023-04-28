@@ -16,21 +16,34 @@ type VertexRecorder struct {
 	Recorder *Recorder
 }
 
-func (recorder *Recorder) Vertex(dig digest.Digest, name string, inputs ...digest.Digest) *VertexRecorder {
+type VertexOpt func(*Vertex)
+
+func WithInputs(inputs ...digest.Digest) VertexOpt {
+	return func(vertex *Vertex) {
+		for _, input := range inputs {
+			vertex.Inputs = append(vertex.Inputs, input.String())
+		}
+	}
+}
+
+func Internal() VertexOpt {
+	return func(vertex *Vertex) {
+		vertex.Internal = true
+	}
+}
+
+func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexOpt) *VertexRecorder {
 	now := Clock.Now()
 
 	vtx := &Vertex{
-		Id: dig.String(),
-
-		Name: name,
-
+		Id:      dig.String(),
+		Name:    name,
 		Started: timestamppb.New(now),
-
-		Group: &recorder.Group.Id,
+		Group:   &recorder.Group.Id,
 	}
 
-	for _, input := range inputs {
-		vtx.Inputs = append(vtx.Inputs, input.String())
+	for _, o := range opts {
+		o(vtx)
 	}
 
 	rec := &VertexRecorder{
