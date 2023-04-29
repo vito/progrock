@@ -167,6 +167,8 @@ github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5Cc
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/vito/vt100 v0.0.0-20230324203615-1b9f0c41442c h1:bdghutfkem2ofZfCHamE+YJAGzTk/9vV02pQgkrxQrE=
 github.com/vito/vt100 v0.0.0-20230324203615-1b9f0c41442c/go.mod h1:qfoJd8OdENFcCg3MFm//aH0ah6b88mqNAYthSr14FuI=
+github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4 h1:MX+b1wthWS36Xo9xcnQzxMJVY5pjv/o+1EiORdbJsgk=
+github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4/go.mod h1:qfoJd8OdENFcCg3MFm//aH0ah6b88mqNAYthSr14FuI=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

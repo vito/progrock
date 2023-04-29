@@ -11,7 +11,7 @@ require (
 	github.com/muesli/termenv v0.15.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
-	github.com/vito/vt100 v0.0.0-20230324203615-1b9f0c41442c
+	github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4
 	github.com/zmb3/spotify/v2 v2.2.1
 	golang.org/x/exp v0.0.0-20230420155640-133eef4313cb
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f
