@@ -5,9 +5,53 @@ import (
 	"sync"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/opencontainers/go-digest"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
+
+type vertexGroups struct {
+	vg map[digest.Digest]map[string]struct{}
+	l  sync.Mutex
+}
+
+func newVertexGroups() *vertexGroups {
+	return &vertexGroups{
+		vg: map[digest.Digest]map[string]struct{}{},
+	}
+}
+
+func (g *vertexGroups) Add(vertex digest.Digest, groups ...string) {
+	g.l.Lock()
+	defer g.l.Unlock()
+
+	for _, group := range groups {
+		if _, ok := g.vg[vertex]; !ok {
+			g.vg[vertex] = map[string]struct{}{}
+		}
+
+		g.vg[vertex][group] = struct{}{}
+	}
+}
+
+func (g *vertexGroups) Groups(vertex digest.Digest, defaultGroup string) []string {
+	g.l.Lock()
+	defer g.l.Unlock()
+
+	var out []string
+	groups, ok := g.vg[vertex]
+	if ok {
+		for group := range groups {
+			out = append(out, group)
+		}
+	}
+
+	if len(out) == 0 {
+		out = append(out, defaultGroup)
+	}
+
+	return out
+}
 
 // Clock is used to determine the current time.
 var Clock = clockwork.NewRealClock()
@@ -20,6 +64,9 @@ type Recorder struct {
 
 	groups  map[string]*Recorder
 	groupsL sync.Mutex
+
+	// contains sub-groups
+	vertexGroups *vertexGroups
 }
 
 // RootGroup is the name of the toplevel group, which is blank.
@@ -35,8 +82,9 @@ func NewRecorder(w Writer, labels ...*Label) *Recorder {
 
 func newEmptyRecorder(w Writer) *Recorder {
 	return &Recorder{
-		w:      w,
-		groups: map[string]*Recorder{},
+		w:            w,
+		groups:       map[string]*Recorder{},
+		vertexGroups: newVertexGroups(),
 	}
 }
 
@@ -47,9 +95,9 @@ func (recorder *Recorder) Record(status *StatusUpdate) error {
 	update := proto.Clone(status).(*StatusUpdate)
 
 	for _, vertex := range update.Vertexes {
-		if vertex.Group == nil {
-			vertex.Group = &recorder.Group.Id
-		}
+		id := digest.Digest(vertex.Id)
+		recorder.vertexGroups.Add(id, vertex.Groups...)
+		vertex.Groups = recorder.vertexGroups.Groups(id, recorder.Group.Id)
 	}
 
 	return recorder.w.WriteStatus(update)
@@ -87,6 +135,8 @@ func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
 
 	subRecorder := newEmptyRecorder(recorder.w)
 	subRecorder.Group = g
+	// vertex groups are global across all subgroups of the root recorder
+	subRecorder.vertexGroups = recorder.vertexGroups
 	subRecorder.sync()
 
 	recorder.groups[name] = subRecorder

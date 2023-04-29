@@ -275,8 +275,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 			// no group here; use the vertex's color
 			fmt.Fprint(w, groupColor(vtxIdx, symbol))
 		} else {
-			if (vtx.Group != nil && *vtx.Group == g.Id) ||
-				(vtx.Group == nil && g.Name == RootGroup)
+			if vtx.IsInGroup(g) || (len(vtx.Groups) == 0 && g.Name == RootGroup) {
 				symbol = ch
 				vtxIdx = i
 			} else if vtxIdx != -1 && i >= vtxIdx {
@@ -333,9 +332,8 @@ func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 		var symbol string
 		if g == nil {
 			symbol = " "
-		} else if (vtx.Group != nil && *vtx.Group == g.Id) ||
-			(vtx.Group == nil && g.Name == RootGroup) {
-			symbol = vBar
+		} else if vtx.IsInGroup(g) || (len(vtx.Groups) == 0 && g.Name == RootGroup) {
+			symbol = "┃"
 		} else {
 			symbol = dBar
 		}
@@ -366,15 +364,12 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 
 		var isActive bool
 		for _, a := range active {
-			if a.Group == nil {
-				// TODO decide if this is required field
-				continue
-			}
-
-			for vg := *a.Group; vg != ""; vg = allGroups[vg].GetParent() {
-				if vg == g.Id {
-					isActive = true
-					break
+			for _, id := range a.Groups {
+				for vg := id; vg != ""; vg = allGroups[vg].GetParent() {
+					if vg == g.Id {
+						isActive = true
+						break
+					}
 				}
 			}
 		}
@@ -439,15 +434,17 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		active = append(active, runningAndFailed...)
 		groups.Reap(w, u, casette.groups, active)
 
-		group := casette.groups[*vtx.Group]
-		if group == nil {
-			fmt.Fprintln(debug, "group is nil:", *vtx.Group)
-		} else {
-			groups = groups.Add(w, u, casette.groups, group)
-		}
+		for _, id := range vtx.Groups {
+			group := casette.groups[id]
+			if group == nil {
+				fmt.Fprintln(casette.debug, "group is nil:", id)
+			} else {
+				groups = groups.Add(w, u, casette.groups, group)
+			}
 
-		if vtx.Completed == nil {
-			runningByGroup[*vtx.Group]++
+			if vtx.Completed == nil {
+				runningByGroup[id]++
+			}
 		}
 
 		if vtx.Completed == nil || vtx.Error != nil {

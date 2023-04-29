@@ -6,6 +6,15 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func (v *Vertex) IsInGroup(g *Group) bool {
+	for _, id := range v.Groups {
+		if id == g.Id {
+			return true
+		}
+	}
+	return false
+}
+
 func (vertex *Vertex) Duration() time.Duration {
 	return dt(vertex.Started, vertex.Completed)
 }
