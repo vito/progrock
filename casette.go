@@ -210,7 +210,7 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 
 	groups = groups.Shrink()
 
-	for i := range groups {
+	for i, g := range groups {
 		if i == parentIdx && addedIdx > parentIdx {
 			// line towards the right of the parent
 			fmt.Fprint(w, groupColor(parentIdx, vrBar))
@@ -229,11 +229,19 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 			fmt.Fprint(w, groupColor(addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
 			// line between parent and added line
-			fmt.Fprint(w, groupColor(i, tBar))
+			if g != nil {
+				fmt.Fprint(w, groupColor(i, tBar))
+			} else {
+				fmt.Fprint(w, groupColor(addedIdx, hBar))
+			}
 			fmt.Fprint(w, groupColor(addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
 			// line between parent and added line
-			fmt.Fprint(w, groupColor(i, tBar))
+			if g != nil {
+				fmt.Fprint(w, groupColor(i, tBar))
+			} else {
+				fmt.Fprint(w, groupColor(addedIdx, hBar))
+			}
 			fmt.Fprint(w, groupColor(addedIdx, hBar))
 		} else if groups[i] != nil {
 			// line out of the way; dim it
@@ -263,18 +271,24 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 			} else {
 				symbol = " "
 			}
-		} else if (vtx.Group != nil && *vtx.Group == g.Id) ||
-			(vtx.Group == nil && g.Name == RootGroup) {
-			symbol = ch
-			vtxIdx = i
-		} else if vtxIdx != -1 && i >= vtxIdx {
-			// line between parent and added line
-			symbol = vlBar
-		} else {
-			symbol = dBar
-		}
 
-		fmt.Fprint(w, groupColor(i, symbol))
+			// no group here; use the vertex's color
+			fmt.Fprint(w, groupColor(vtxIdx, symbol))
+		} else {
+			if (vtx.Group != nil && *vtx.Group == g.Id) ||
+				(vtx.Group == nil && g.Name == RootGroup)
+				symbol = ch
+				vtxIdx = i
+			} else if vtxIdx != -1 && i >= vtxIdx {
+				// line between parent and added line
+				symbol = vlBar
+			} else {
+				symbol = dBar
+			}
+
+			// respect color of the group
+			fmt.Fprint(w, groupColor(i, symbol))
+		}
 
 		if vtxIdx != -1 && i >= vtxIdx && i < len(groups)-1 {
 			fmt.Fprint(w, groupColor(vtxIdx, hdlBar))
