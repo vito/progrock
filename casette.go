@@ -23,10 +23,11 @@ type Casette struct {
 
 	showInternal bool
 
+	debug *ui.Vterm
+
 	l sync.Mutex
 }
 
-var debug = ui.NewVterm(80)
 
 func NewCasette() *Casette {
 	return &Casette{
@@ -38,6 +39,8 @@ func NewCasette() *Casette {
 		// sane defaults before size is received
 		width:  80,
 		height: 24,
+
+		debug: ui.NewVterm(80),
 	}
 }
 
@@ -127,7 +130,7 @@ func (casette *Casette) SetWindowSize(w, h int) {
 	for _, l := range casette.logs {
 		l.SetWidth(w)
 	}
-	debug.SetWidth(w)
+	casette.debug.SetWidth(w)
 	casette.l.Unlock()
 }
 
