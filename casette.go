@@ -28,6 +28,26 @@ type Casette struct {
 	l sync.Mutex
 }
 
+const (
+	dot      = "█"
+	emptyDot = "○"
+	vBar     = "│"
+	hBar     = "─"
+	hdlBar   = "╴"
+	hdrBar   = "╶"
+	tBar     = "┼"
+	dBar     = "┊" // ┃┊┆┇┋╎
+	blCorner = "╰"
+	tlCorner = "╭"
+	trCorner = "╮"
+	brCorner = "╯"
+	vlBar    = "┤"
+	vrBar    = "├"
+	htBar    = "┴"
+	hbBar    = "┬"
+	lCaret   = "<"
+	rCaret   = ">"
+)
 
 func NewCasette() *Casette {
 	return &Casette{
@@ -134,28 +154,181 @@ func (casette *Casette) SetWindowSize(w, h int) {
 	casette.l.Unlock()
 }
 
-type Groups []*Group
+var pulse ui.Frames
 
-const (
-	dot      = "█"
-	emptyDot = "○"
-	vBar     = "│"
-	hBar     = "─"
-	hdlBar   = "╴"
-	hdrBar   = "╶"
-	tBar     = "┼"
-	dBar     = "┊" // ┃┊┆┇┋╎
-	blCorner = "╰"
-	tlCorner = "╭"
-	trCorner = "╮"
-	brCorner = "╯"
-	vlBar    = "┤"
-	vrBar    = "├"
-	htBar    = "┴"
-	hbBar    = "┬"
-	lCaret   = "<"
-	rCaret   = ">"
-)
+func init() {
+	pulse = ui.Frames{}
+	copy(pulse[:], ui.FadeFrames[:])
+	lastFrame := (ui.FramesPerBeat / 4) * 3
+	for i := lastFrame; i < len(pulse); i++ {
+		pulse[i] = ui.FadeFrames[lastFrame]
+	}
+}
+
+func (casette *Casette) Render(w io.Writer, u *UI) error {
+	casette.l.Lock()
+	defer casette.l.Unlock()
+
+	groups := Groups{}
+
+	runningByGroup := map[string]int{}
+
+	var runningAndFailed []*Vertex
+	for i, dig := range casette.order {
+		_ = i
+		vtx := casette.vertexes[dig]
+
+		if vtx.Internal && !casette.showInternal {
+			// skip internal vertices
+			continue
+		}
+
+		var active []*Vertex
+		for _, rest := range casette.order[i:] {
+			active = append(active, casette.vertexes[rest])
+		}
+		active = append(active, runningAndFailed...)
+		groups.Reap(w, u, casette.groups, active)
+
+		for _, id := range vtx.Groups {
+			group := casette.groups[id]
+			if group == nil {
+				fmt.Fprintln(casette.debug, "group is nil:", id)
+			} else {
+				groups = groups.Add(w, u, casette.groups, group)
+			}
+
+			if vtx.Completed == nil {
+				runningByGroup[id]++
+			}
+		}
+
+		if vtx.Completed == nil || vtx.Error != nil {
+			runningAndFailed = append(runningAndFailed, vtx)
+			continue
+		}
+
+		groups.VertexPrefix(w, u, vtx, dot)
+		if err := u.RenderVertex(w, vtx); err != nil {
+			return err
+		}
+
+		tasks := casette.tasks[vtx.Id]
+		for _, t := range tasks {
+			groups.VertexPrefix(w, u, vtx, vrBar)
+			if err := u.RenderTask(w, t); err != nil {
+				return err
+			}
+		}
+	}
+
+	for i, vtx := range runningAndFailed {
+		groups.Reap(w, u, casette.groups, runningAndFailed[i:])
+
+		symbol := dot
+		if vtx.Completed == nil {
+			symbol, _, _ = u.Spinner.ViewFrame(pulse)
+		}
+
+		groups.VertexPrefix(w, u, vtx, symbol)
+		if err := u.RenderVertex(w, vtx); err != nil {
+			return err
+		}
+
+		tasks := casette.tasks[vtx.Id]
+		for _, t := range tasks {
+			groups.VertexPrefix(w, u, vtx, vrBar)
+			if err := u.RenderTask(w, t); err != nil {
+				return err
+			}
+		}
+
+		if vtx.Started == nil {
+			continue
+		}
+
+		term := casette.vertexLogs(vtx.Id)
+
+		if vtx.Error != nil {
+			term.SetHeight(term.UsedHeight())
+		} else {
+			term.SetHeight(casette.termHeight())
+		}
+
+		buf := new(bytes.Buffer)
+		groups.TermPrefix(buf, u, vtx)
+		term.SetPrefix(buf.String())
+
+		if err := u.RenderTerm(w, term); err != nil {
+			return err
+		}
+	}
+
+	groups.Reap(w, u, casette.groups, nil)
+
+	casette.debug.SetHeight(10)
+	fmt.Fprint(w, casette.debug.View())
+
+	return nil
+}
+
+func (casette *Casette) insert(vtx *Vertex) {
+	if vtx.Started == nil {
+		// skip pending vertices; too complicated to deal with
+		return
+	}
+
+	casette.vertexes[vtx.Id] = vtx
+
+	for i, dig := range casette.order {
+		other := casette.vertexes[dig]
+		if other.Started.AsTime().After(vtx.Started.AsTime()) {
+			inserted := make([]string, len(casette.order)+1)
+			copy(inserted, casette.order[:i])
+			inserted[i] = vtx.Id
+			copy(inserted[i+1:], casette.order[i:])
+			casette.order = inserted
+			return
+		}
+	}
+
+	casette.order = append(casette.order, vtx.Id)
+}
+
+func (casette *Casette) isAncestor(a, b *Vertex) bool {
+	for _, dig := range b.Inputs {
+		if dig == a.Id {
+			return true
+		}
+
+		ancestor, found := casette.vertexes[dig]
+		if !found {
+			continue
+		}
+
+		if casette.isAncestor(a, ancestor) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (casette *Casette) termHeight() int {
+	return casette.height / 4
+}
+
+func (casette *Casette) vertexLogs(vertex string) *ui.Vterm {
+	term, found := casette.logs[vertex]
+	if !found {
+		term = ui.NewVterm(casette.width)
+		casette.logs[vertex] = term
+	}
+
+	return term
+}
+
+type Groups []*Group
 
 func (groups Groups) Shrink() Groups {
 	for i := len(groups) - 1; i >= 0; i-- {
@@ -396,178 +569,4 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 	}
 
 	return groups.Shrink()
-}
-
-var pulse ui.Frames
-
-func init() {
-	pulse = ui.Frames{}
-	copy(pulse[:], ui.FadeFrames[:])
-	lastFrame := (ui.FramesPerBeat / 4) * 3
-	for i := lastFrame; i < len(pulse); i++ {
-		pulse[i] = ui.FadeFrames[lastFrame]
-	}
-}
-
-func (casette *Casette) Render(w io.Writer, u *UI) error {
-	casette.l.Lock()
-	defer casette.l.Unlock()
-
-	groups := Groups{}
-
-	runningByGroup := map[string]int{}
-
-	var runningAndFailed []*Vertex
-	for i, dig := range casette.order {
-		_ = i
-		vtx := casette.vertexes[dig]
-
-		if vtx.Internal && !casette.showInternal {
-			// skip internal vertices
-			continue
-		}
-
-		var active []*Vertex
-		for _, rest := range casette.order[i:] {
-			active = append(active, casette.vertexes[rest])
-		}
-		active = append(active, runningAndFailed...)
-		groups.Reap(w, u, casette.groups, active)
-
-		for _, id := range vtx.Groups {
-			group := casette.groups[id]
-			if group == nil {
-				fmt.Fprintln(casette.debug, "group is nil:", id)
-			} else {
-				groups = groups.Add(w, u, casette.groups, group)
-			}
-
-			if vtx.Completed == nil {
-				runningByGroup[id]++
-			}
-		}
-
-		if vtx.Completed == nil || vtx.Error != nil {
-			runningAndFailed = append(runningAndFailed, vtx)
-			continue
-		}
-
-		groups.VertexPrefix(w, u, vtx, dot)
-		if err := u.RenderVertex(w, vtx); err != nil {
-			return err
-		}
-
-		tasks := casette.tasks[vtx.Id]
-		for _, t := range tasks {
-			groups.VertexPrefix(w, u, vtx, vrBar)
-			if err := u.RenderTask(w, t); err != nil {
-				return err
-			}
-		}
-	}
-
-	for i, vtx := range runningAndFailed {
-		groups.Reap(w, u, casette.groups, runningAndFailed[i:])
-
-		symbol := dot
-		if vtx.Completed == nil {
-			symbol, _, _ = u.Spinner.ViewFrame(pulse)
-		}
-
-		groups.VertexPrefix(w, u, vtx, symbol)
-		if err := u.RenderVertex(w, vtx); err != nil {
-			return err
-		}
-
-		tasks := casette.tasks[vtx.Id]
-		for _, t := range tasks {
-			groups.VertexPrefix(w, u, vtx, vrBar)
-			if err := u.RenderTask(w, t); err != nil {
-				return err
-			}
-		}
-
-		if vtx.Started == nil {
-			continue
-		}
-
-		term := casette.vertexLogs(vtx.Id)
-
-		if vtx.Error != nil {
-			term.SetHeight(term.UsedHeight())
-		} else {
-			term.SetHeight(casette.termHeight())
-		}
-
-		buf := new(bytes.Buffer)
-		groups.TermPrefix(buf, u, vtx)
-		term.SetPrefix(buf.String())
-
-		if err := u.RenderTerm(w, term); err != nil {
-			return err
-		}
-	}
-
-	groups.Reap(w, u, casette.groups, nil)
-
-	casette.debug.SetHeight(10)
-	fmt.Fprint(w, casette.debug.View())
-
-	return nil
-}
-
-func (casette *Casette) insert(vtx *Vertex) {
-	if vtx.Started == nil {
-		// skip pending vertices; too complicated to deal with
-		return
-	}
-
-	casette.vertexes[vtx.Id] = vtx
-
-	for i, dig := range casette.order {
-		other := casette.vertexes[dig]
-		if other.Started.AsTime().After(vtx.Started.AsTime()) {
-			inserted := make([]string, len(casette.order)+1)
-			copy(inserted, casette.order[:i])
-			inserted[i] = vtx.Id
-			copy(inserted[i+1:], casette.order[i:])
-			casette.order = inserted
-			return
-		}
-	}
-
-	casette.order = append(casette.order, vtx.Id)
-}
-
-func (casette *Casette) isAncestor(a, b *Vertex) bool {
-	for _, dig := range b.Inputs {
-		if dig == a.Id {
-			return true
-		}
-
-		ancestor, found := casette.vertexes[dig]
-		if !found {
-			continue
-		}
-
-		if casette.isAncestor(a, ancestor) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (casette *Casette) termHeight() int {
-	return casette.height / 4
-}
-
-func (casette *Casette) vertexLogs(vertex string) *ui.Vterm {
-	term, found := casette.logs[vertex]
-	if !found {
-		term = ui.NewVterm(casette.width)
-		casette.logs[vertex] = term
-	}
-
-	return term
 }

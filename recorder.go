@@ -10,49 +10,6 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type vertexGroups struct {
-	vg map[digest.Digest]map[string]struct{}
-	l  sync.Mutex
-}
-
-func newVertexGroups() *vertexGroups {
-	return &vertexGroups{
-		vg: map[digest.Digest]map[string]struct{}{},
-	}
-}
-
-func (g *vertexGroups) Add(vertex digest.Digest, groups ...string) {
-	g.l.Lock()
-	defer g.l.Unlock()
-
-	for _, group := range groups {
-		if _, ok := g.vg[vertex]; !ok {
-			g.vg[vertex] = map[string]struct{}{}
-		}
-
-		g.vg[vertex][group] = struct{}{}
-	}
-}
-
-func (g *vertexGroups) Groups(vertex digest.Digest, defaultGroup string) []string {
-	g.l.Lock()
-	defer g.l.Unlock()
-
-	var out []string
-	groups, ok := g.vg[vertex]
-	if ok {
-		for group := range groups {
-			out = append(out, group)
-		}
-	}
-
-	if len(out) == 0 {
-		out = append(out, defaultGroup)
-	}
-
-	return out
-}
-
 // Clock is used to determine the current time.
 var Clock = clockwork.NewRealClock()
 
@@ -164,4 +121,51 @@ func (recorder *Recorder) sync() {
 	recorder.Record(&StatusUpdate{
 		Groups: []*Group{recorder.Group},
 	})
+}
+
+// vertexGroups tracks the union of all groups seen for a vertex digest.
+type vertexGroups struct {
+	vg map[digest.Digest]map[string]struct{}
+	l  sync.Mutex
+}
+
+func newVertexGroups() *vertexGroups {
+	return &vertexGroups{
+		vg: map[digest.Digest]map[string]struct{}{},
+	}
+}
+
+// Add adds the given groups to the vertex digest.
+func (g *vertexGroups) Add(vertex digest.Digest, groups ...string) {
+	g.l.Lock()
+	defer g.l.Unlock()
+
+	for _, group := range groups {
+		if _, ok := g.vg[vertex]; !ok {
+			g.vg[vertex] = map[string]struct{}{}
+		}
+
+		g.vg[vertex][group] = struct{}{}
+	}
+}
+
+// Groups returns the union of all groups seen for a vertex digest. If no
+// groups are found, the defaultGroup is returned.
+func (g *vertexGroups) Groups(vertex digest.Digest, defaultGroup string) []string {
+	g.l.Lock()
+	defer g.l.Unlock()
+
+	var out []string
+	groups, ok := g.vg[vertex]
+	if ok {
+		for group := range groups {
+			out = append(out, group)
+		}
+	}
+
+	if len(out) == 0 {
+		out = append(out, defaultGroup)
+	}
+
+	return out
 }
