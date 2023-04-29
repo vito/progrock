@@ -388,7 +388,7 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 	if len(reaped) > 0 {
 		for i, g := range groups {
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, dBar))
+				fmt.Fprint(w, groupColor(i, vBar))
 				fmt.Fprint(w, " ")
 			} else if reaped[i] {
 				fmt.Fprint(w, groupColor(i, htBar))
