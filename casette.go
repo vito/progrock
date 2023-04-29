@@ -44,6 +44,7 @@ const (
 	brCorner = "╯"
 	vlBar    = "┤"
 	vrBar    = "├"
+	vlbBar   = "┫"
 	vrbBar   = "┣"
 	htBar    = "┴"
 	htbBar   = "┻"
@@ -389,11 +390,11 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 	for i, g := range groups {
 		if i == parentIdx && addedIdx > parentIdx {
 			// line towards the right of the parent
-			fmt.Fprint(w, groupColor(parentIdx, vrBar))
+			fmt.Fprint(w, groupColor(parentIdx, vrbBar))
 			fmt.Fprint(w, groupColor(addedIdx, hBar))
 		} else if i == parentIdx && addedIdx < parentIdx {
 			// line towards the left of the parent
-			fmt.Fprint(w, groupColor(parentIdx, vlBar))
+			fmt.Fprint(w, groupColor(parentIdx, vlbBar))
 			fmt.Fprint(w, " ")
 		} else if i == addedIdx && addedIdx > parentIdx {
 			// line left from parent and down to added line
