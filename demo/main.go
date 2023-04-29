@@ -82,6 +82,11 @@ dance:
 
 		subVtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
 
+		multiGroup := group.Vertex(
+			digest.Digest(fmt.Sprintf("log-and-count-%d", v%2)),
+			fmt.Sprintf("count and log: %d", v%2),
+		)
+
 		wg.Add(1)
 		go func() {
 			defer cancel()
@@ -107,6 +112,7 @@ dance:
 			count.Complete()
 
 			succeeds.Complete()
+			multiGroup.Complete()
 		}()
 
 		if v%2 == 0 {

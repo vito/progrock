@@ -43,6 +43,7 @@ const (
 	brCorner = "╯"
 	vlBar    = "┤"
 	vrBar    = "├"
+	vrbBar   = "┣"
 	htBar    = "┴"
 	hbBar    = "┬"
 	lCaret   = "<"
@@ -215,7 +216,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 		tasks := casette.tasks[vtx.Id]
 		for _, t := range tasks {
-			groups.VertexPrefix(w, u, vtx, vrBar)
+			groups.VertexPrefix(w, u, vtx, vrbBar)
 			if err := u.RenderTask(w, t); err != nil {
 				return err
 			}
@@ -237,7 +238,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 		tasks := casette.tasks[vtx.Id]
 		for _, t := range tasks {
-			groups.VertexPrefix(w, u, vtx, vrBar)
+			groups.VertexPrefix(w, u, vtx, vrbBar)
 			if err := u.RenderTask(w, t); err != nil {
 				return err
 			}
@@ -440,7 +441,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 		var symbol string
 		if g == nil {
 			if vtxIdx != -1 && i >= vtxIdx {
-				symbol = hdlBar
+				symbol = hdrBar
 			} else {
 				symbol = " "
 			}
@@ -453,7 +454,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 				vtxIdx = i
 			} else if vtxIdx != -1 && i >= vtxIdx {
 				// line between parent and added line
-				symbol = vlBar
+				symbol = vrBar
 			} else {
 				symbol = dBar
 			}
@@ -463,7 +464,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 		}
 
 		if vtxIdx != -1 && i >= vtxIdx && i < len(groups)-1 {
-			fmt.Fprint(w, groupColor(vtxIdx, hdlBar))
+			fmt.Fprint(w, groupColor(vtxIdx, hdrBar))
 		} else {
 			fmt.Fprint(w, " ")
 		}
@@ -477,21 +478,31 @@ func (groups Groups) GroupPrefix(w io.Writer, u *UI, group *Group) {
 	for i, g := range groups {
 		var symbol string
 		if g == nil {
-			symbol = " "
-		} else if group.Id == g.Id {
-			symbol = "▼"
-			vtxIdx = i
-		} else if vtxIdx != -1 && i >= vtxIdx {
-			// line between parent and added line
-			symbol = vlBar
+			if vtxIdx != -1 && i >= vtxIdx {
+				symbol = hdrBar
+			} else {
+				symbol = " "
+			}
+
+			// no group here; use the vertex's color
+			fmt.Fprint(w, groupColor(vtxIdx, symbol))
 		} else {
-			symbol = dBar
+			if group.Id == g.Id {
+				symbol = "▼"
+				vtxIdx = i
+			} else if vtxIdx != -1 && i >= vtxIdx {
+				// line between parent and added line
+				symbol = vrBar
+			} else {
+				symbol = dBar
+			}
+
+			// respect color of the group
+			fmt.Fprint(w, groupColor(i, symbol))
 		}
 
-		fmt.Fprint(w, groupColor(i, symbol))
-
 		if vtxIdx != -1 && i >= vtxIdx && i < len(groups)-1 {
-			fmt.Fprint(w, groupColor(vtxIdx, hdlBar))
+			fmt.Fprint(w, groupColor(vtxIdx, hdrBar))
 		} else {
 			fmt.Fprint(w, " ")
 		}
