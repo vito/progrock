@@ -191,7 +191,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			active = append(active, casette.vertexes[rest])
 		}
 		active = append(active, runningAndFailed...)
-		groups.Reap(w, u, casette.groups, active)
+		groups = groups.Reap(w, u, casette.groups, active)
 
 		for _, id := range vtx.Groups {
 			group := casette.groups[id]
@@ -226,7 +226,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 	}
 
 	for i, vtx := range runningAndFailed {
-		groups.Reap(w, u, casette.groups, runningAndFailed[i:])
+		groups = groups.Reap(w, u, casette.groups, runningAndFailed[i:])
 
 		symbol := dot
 		if vtx.Completed == nil {
