@@ -27,6 +27,9 @@ type Recorder struct {
 }
 
 // RootGroup is the name of the toplevel group, which is blank.
+//
+// This is a slight hack, but it gives reasonable meaning to an empty state
+// while sidestepping the issue of figuring out what the "root" name should be.
 const RootGroup = ""
 
 // NewRecorder creates a new Recorder, which writes to the given Writer.
