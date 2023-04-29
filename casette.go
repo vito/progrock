@@ -32,11 +32,12 @@ const (
 	dot      = "█"
 	emptyDot = "○"
 	vBar     = "│"
+	vbBar    = "┃"
 	hBar     = "─"
 	hdlBar   = "╴"
 	hdrBar   = "╶"
 	tBar     = "┼"
-	dBar     = "┊" // ┃┊┆┇┋╎
+	dBar     = "┊" // ┊┆┇┋╎
 	blCorner = "╰"
 	tlCorner = "╭"
 	trCorner = "╮"
@@ -45,6 +46,7 @@ const (
 	vrBar    = "├"
 	vrbBar   = "┣"
 	htBar    = "┴"
+	htbBar   = "┻"
 	hbBar    = "┬"
 	lCaret   = "<"
 	rCaret   = ">"
@@ -517,7 +519,7 @@ func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 		if g == nil {
 			symbol = " "
 		} else if vtx.IsInGroup(g) || (len(vtx.Groups) == 0 && g.Name == RootGroup) {
-			symbol = "┃"
+			symbol = vbBar
 		} else {
 			symbol = dBar
 		}
@@ -567,10 +569,10 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 	if len(reaped) > 0 {
 		for i, g := range groups {
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, vBar))
+				fmt.Fprint(w, groupColor(i, dBar))
 				fmt.Fprint(w, " ")
 			} else if reaped[i] {
-				fmt.Fprint(w, groupColor(i, htBar))
+				fmt.Fprint(w, groupColor(i, htbBar))
 				fmt.Fprint(w, " ")
 			} else {
 				fmt.Fprint(w, "  ")
