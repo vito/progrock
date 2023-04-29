@@ -513,8 +513,8 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 	groups.Reap(w, u, casette.groups, nil)
 
-	debug.SetHeight(10)
-	fmt.Fprint(w, debug.View())
+	casette.debug.SetHeight(10)
+	fmt.Fprint(w, casette.debug.View())
 
 	return nil
 }
