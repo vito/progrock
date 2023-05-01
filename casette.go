@@ -662,10 +662,12 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 	for i, g := range groups {
 		var symbol string
 		if g == nil {
-			if i >= vtxIdx {
-				symbol = hdrBar
-			} else if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
+			if firstParentIdx != -1 && vtxIdx > firstParentIdx && i >= firstParentIdx && i < vtxIdx {
 				symbol = hBar
+			} else if firstParentIdx != -1 && vtxIdx < firstParentIdx && i >= vtxIdx && i < firstParentIdx {
+				symbol = hBar
+			} else if i >= vtxIdx {
+				symbol = hdrBar
 			} else {
 				symbol = " "
 			}
@@ -677,22 +679,24 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 				symbol = block
 				vtxIdx = i
 			} else if g.Created(vtx) && i > vtxIdx {
-				if true || g.WitnessedAll() {
+				if g.WitnessedAll() {
 					symbol = brCorner
 				} else {
 					symbol = vlBar
 				}
 			} else if g.Created(vtx) {
-				if true || g.WitnessedAll() {
+				if g.WitnessedAll() {
 					symbol = blCorner
 				} else {
 					symbol = vrBar
 				}
+			} else if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
+				symbol = tBar
+			} else if firstParentIdx != -1 && i >= vtxIdx && i < firstParentIdx {
+				symbol = tBar
 			} else if i >= vtxIdx {
 				// line between parent and added line
 				symbol = vrBar
-			} else if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
-				symbol = tBar
 			} else {
 				symbol = dBar
 			}
@@ -701,8 +705,18 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 			fmt.Fprint(w, groupColor(i, symbol))
 		}
 
-		if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
-			fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+		if firstParentIdx != -1 && vtxIdx > firstParentIdx && i >= firstParentIdx && i < vtxIdx {
+			if i+1 == vtxIdx {
+				fmt.Fprint(w, groupColor(firstParentIdx, ">"))
+			} else {
+				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+			}
+		} else if firstParentIdx != -1 && vtxIdx < firstParentIdx && i >= vtxIdx && i < firstParentIdx {
+			if i == vtxIdx {
+				fmt.Fprint(w, groupColor(firstParentIdx, "<"))
+			} else {
+				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+			}
 		} else if i >= vtxIdx && i < len(groups)-1 {
 			fmt.Fprint(w, groupColor(vtxIdx, hdrBar))
 		} else {
