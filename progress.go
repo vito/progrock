@@ -15,6 +15,45 @@ func (v *Vertex) IsInGroup(g *Group) bool {
 	return false
 }
 
+func (v *Vertex) IsInGroupOrParent(g *Group, allGroups map[string]*Group) bool {
+	for _, id := range v.Groups {
+		if id == g.Id {
+			return true
+		}
+		for vg := id; vg != ""; vg = allGroups[vg].GetParent() {
+			if vg == g.Id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (v *Vertex) HasInput(o *Vertex) bool {
+	for _, id := range o.Outputs {
+		if id == v.Id {
+			return true
+		}
+	}
+	for _, id := range v.Inputs {
+		if id == o.Id {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *Vertex) IsSibling(o *Vertex) bool {
+	for _, id := range v.Groups {
+		for _, oid := range o.Groups {
+			if id == oid {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (vertex *Vertex) Duration() time.Duration {
 	return dt(vertex.Started, vertex.Completed)
 }

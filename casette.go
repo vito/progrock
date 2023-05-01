@@ -29,7 +29,8 @@ type Casette struct {
 }
 
 const (
-	dot      = "█"
+	block    = "█"
+	dot      = "●"
 	emptyDot = "○"
 	vBar     = "│"
 	vbBar    = "┃"
@@ -179,8 +180,13 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 	var runningAndFailed []*Vertex
 	for i, dig := range casette.order {
-		_ = i
 		vtx := casette.vertexes[dig]
+
+		for _, g := range groups {
+			if g != nil {
+				g.Witness(vtx)
+			}
+		}
 
 		if vtx.Internal && !casette.showInternal {
 			// skip internal vertices
@@ -192,6 +198,9 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			active = append(active, casette.vertexes[rest])
 		}
 		active = append(active, runningAndFailed...)
+
+		activeExceptCurrent := active[1:]
+
 		groups = groups.Reap(w, u, casette.groups, active)
 
 		for _, id := range vtx.Groups {
@@ -199,7 +208,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			if group == nil {
 				fmt.Fprintln(casette.debug, "group is nil:", id)
 			} else {
-				groups = groups.Add(w, u, casette.groups, group)
+				groups = groups.AddGroup(w, u, casette.groups, group)
 			}
 
 			if vtx.Completed == nil {
@@ -212,24 +221,45 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			continue
 		}
 
-		groups.VertexPrefix(w, u, vtx, dot)
+		groups.VertexPrefix(w, u, vtx, block)
 		if err := u.RenderVertex(w, vtx); err != nil {
 			return err
 		}
 
 		tasks := casette.tasks[vtx.Id]
 		for _, t := range tasks {
-			groups.VertexPrefix(w, u, vtx, vrbBar)
+			groups.TaskPrefix(w, u, vtx)
 			if err := u.RenderTask(w, t); err != nil {
 				return err
 			}
+		}
+
+		var haveInput []*Vertex
+		for _, a := range activeExceptCurrent {
+			if a.HasInput(vtx) && !a.IsSibling(vtx) {
+				haveInput = append(haveInput, a)
+			}
+		}
+
+		for i, g := range groups {
+			if g != nil {
+				if g.WitnessedAll() {
+					groups[i] = nil
+				}
+			}
+		}
+
+		groups = groups.Shrink()
+
+		if len(haveInput) > 0 {
+			groups = groups.AddVertex(w, u, casette.groups, vtx, haveInput)
 		}
 	}
 
 	for i, vtx := range runningAndFailed {
 		groups = groups.Reap(w, u, casette.groups, runningAndFailed[i:])
 
-		symbol := dot
+		symbol := block
 		if vtx.Completed == nil {
 			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
@@ -241,7 +271,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 		tasks := casette.tasks[vtx.Id]
 		for _, t := range tasks {
-			groups.VertexPrefix(w, u, vtx, vrbBar)
+			groups.TaskPrefix(w, u, vtx)
 			if err := u.RenderTask(w, t); err != nil {
 				return err
 			}
@@ -332,7 +362,79 @@ func (casette *Casette) vertexLogs(vertex string) *ui.Vterm {
 	return term
 }
 
-type Groups []*Group
+type Groups []progressGroup
+
+type progressGroup interface {
+	ID() string
+	DirectlyContains(*Vertex) bool
+	IsActiveVia(*Vertex, map[string]*Group) bool
+	Created(*Vertex) bool
+	Witness(*Vertex)
+	WitnessedAll() bool
+}
+
+type progGroup struct {
+	*Group
+}
+
+func (gg progGroup) ID() string {
+	return gg.Id
+}
+
+func (gg progGroup) DirectlyContains(vtx *Vertex) bool {
+	return vtx.IsInGroup(gg.Group) ||
+		len(vtx.Groups) == 0 && gg.Name == RootGroup
+}
+
+func (gg progGroup) IsActiveVia(vtx *Vertex, allGroups map[string]*Group) bool {
+	return vtx.IsInGroupOrParent(gg.Group, allGroups) ||
+		len(vtx.Groups) == 0 && gg.Name == RootGroup
+}
+
+func (gg progGroup) Created(vtx *Vertex) bool {
+	return false
+}
+
+func (vg progGroup) Witness(other *Vertex) {
+}
+
+func (vg progGroup) WitnessedAll() bool {
+	return false
+}
+
+type vertexGroup struct {
+	*Vertex
+	outputs   []*Vertex
+	witnessed map[string]bool
+}
+
+func (vg vertexGroup) ID() string {
+	return vg.Id
+}
+
+func (vg vertexGroup) DirectlyContains(vtx *Vertex) bool {
+	return false //vtx.HasInput(vg.Vertex) // TODO
+}
+
+func (vg vertexGroup) IsActiveVia(other *Vertex, allGroups map[string]*Group) bool {
+	return other.HasInput(vg.Vertex) // TODO
+}
+
+func (vg vertexGroup) Created(other *Vertex) bool {
+	return other.HasInput(vg.Vertex)
+}
+
+func (vg vertexGroup) Witness(other *Vertex) {
+	for _, out := range vg.outputs {
+		if out.Id == other.Id {
+			vg.witnessed[other.Id] = true
+		}
+	}
+}
+
+func (vg vertexGroup) WitnessedAll() bool {
+	return len(vg.witnessed) == len(vg.outputs)
+}
 
 func (groups Groups) Shrink() Groups {
 	for i := len(groups) - 1; i >= 0; i-- {
@@ -345,9 +447,11 @@ func (groups Groups) Shrink() Groups {
 	return groups
 }
 
-func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group *Group) Groups {
+func (groups Groups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, group *Group) Groups {
+	pg := progGroup{group}
+
 	if len(groups) == 0 && group.Name == RootGroup {
-		return []*Group{group}
+		return Groups{pg}
 	}
 
 	parentIdx := -1
@@ -355,25 +459,25 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 		if g == nil {
 			continue
 		}
-		if g.Id == group.Id {
+		if g.ID() == group.Id {
 			return groups
 		}
-		if g.Id == group.GetParent() {
+		if g.ID() == group.GetParent() {
 			parentIdx = i
 		}
 	}
 
 	if parentIdx == -1 {
 		parent := allGroups[group.GetParent()]
-		groups = groups.Add(w, u, allGroups, parent)
-		return groups.Add(w, u, allGroups, group)
+		groups = groups.AddGroup(w, u, allGroups, parent)
+		return groups.AddGroup(w, u, allGroups, group)
 	}
 
 	var added bool
 	var addedIdx int
 	for i, c := range groups {
 		if c == nil {
-			groups[i] = group
+			groups[i] = pg
 			added = true
 			addedIdx = i
 			break
@@ -381,7 +485,7 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 	}
 
 	if !added {
-		groups = append(groups, group)
+		groups = append(groups, pg)
 		addedIdx = len(groups) - 1
 	}
 
@@ -430,13 +534,184 @@ func (groups Groups) Add(w io.Writer, u *UI, allGroups map[string]*Group, group 
 	}
 	fmt.Fprintln(w)
 
-	groups.GroupPrefix(w, u, group)
+	groups.GroupPrefix(w, u, pg)
 	fmt.Fprintln(w, termenv.String(group.Name).Bold())
 
 	return groups
 }
 
+func (groups Groups) AddVertex(w io.Writer, u *UI, allGroups map[string]*Group, vtx *Vertex, outputs []*Vertex) Groups {
+	// return groups
+	vg := vertexGroup{
+		vtx,
+		outputs,
+		map[string]bool{},
+	}
+
+	var added bool
+	var addedIdx int
+	for i, c := range groups {
+		if c == nil {
+			groups[i] = vg
+			added = true
+			addedIdx = i
+			break
+		}
+	}
+
+	if !added {
+		groups = append(groups, vg)
+		addedIdx = len(groups) - 1
+	}
+
+	var parentIdx = -1
+
+	for i, g := range groups {
+		hasVtx := g != nil && g.DirectlyContains(vtx)
+		if hasVtx {
+			if parentIdx == -1 {
+				parentIdx = i
+				// } else {
+				// 	panic("impossible?")
+			}
+		}
+	}
+
+	// if parentIdx == -1 {
+	// 	return groups.Shrink()
+	// }
+
+	for i, g := range groups {
+		if i == parentIdx && addedIdx > parentIdx {
+			// line towards the right of the parent
+			fmt.Fprint(w, groupColor(parentIdx, vrbBar))
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
+		} else if i == parentIdx && addedIdx < parentIdx {
+			// line towards the left of the parent
+			fmt.Fprint(w, groupColor(parentIdx, vlbBar))
+			fmt.Fprint(w, " ")
+		} else if parentIdx != -1 && i == addedIdx && addedIdx > parentIdx {
+			// line left from parent and down to added line
+			fmt.Fprint(w, groupColor(addedIdx, trCorner))
+			fmt.Fprint(w, " ")
+		} else if parentIdx != -1 && i == addedIdx && addedIdx < parentIdx {
+			// line up from added line and right to parent
+			fmt.Fprint(w, groupColor(addedIdx, tlCorner))
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
+		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
+			// line between parent and added line
+			if g != nil {
+				fmt.Fprint(w, groupColor(i, tBar))
+			} else {
+				fmt.Fprint(w, groupColor(addedIdx, hBar))
+			}
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
+		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
+			// line between parent and added line
+			if g != nil {
+				fmt.Fprint(w, groupColor(i, tBar))
+			} else {
+				fmt.Fprint(w, groupColor(addedIdx, hBar))
+			}
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
+		} else if parentIdx == -1 && i == addedIdx {
+			fmt.Fprint(w, groupColor(addedIdx, emptyDot)) // TODO pointless?
+			fmt.Fprint(w, groupColor(addedIdx, hBar))
+		} else if groups[i] != nil {
+			// line out of the way; dim it
+			fmt.Fprint(w, groupColor(i, dBar))
+			fmt.Fprint(w, " ")
+		} else {
+			fmt.Fprint(w, "  ")
+		}
+	}
+	// fmt.Fprintln(w)
+
+	// groups.GroupPrefix(w, u, vg)
+	// fmt.Fprintln(w, termenv.String(vtx.Name).Bold())
+	fmt.Fprintln(w, termenv.String(vtx.Name).Foreground(termenv.ANSIBrightBlack))
+
+	return groups.Shrink()
+}
+
 func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
+	groups = groups.Shrink()
+
+	var firstParentIdx = -1
+	var vtxIdx = -1
+	for i, g := range groups {
+		if g == nil {
+			continue
+		}
+
+		if g.Created(vtx) {
+			if firstParentIdx == -1 {
+				firstParentIdx = i
+			}
+		}
+
+		if g.DirectlyContains(vtx) {
+			vtxIdx = i
+		}
+	}
+
+	if vtxIdx == -1 {
+		panic("impossible? vertex has no group")
+	}
+
+	for i, g := range groups {
+		var symbol string
+		if g == nil {
+			if i >= vtxIdx {
+				symbol = hdrBar
+			} else if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
+				symbol = hBar
+			} else {
+				symbol = " "
+			}
+
+			// no group here; use the vertex's color
+			fmt.Fprint(w, groupColor(vtxIdx, symbol))
+		} else {
+			if g.DirectlyContains(vtx) {
+				symbol = block
+				vtxIdx = i
+			} else if g.Created(vtx) && i > vtxIdx {
+				if true || g.WitnessedAll() {
+					symbol = brCorner
+				} else {
+					symbol = vlBar
+				}
+			} else if g.Created(vtx) {
+				if true || g.WitnessedAll() {
+					symbol = blCorner
+				} else {
+					symbol = vrBar
+				}
+			} else if i >= vtxIdx {
+				// line between parent and added line
+				symbol = vrBar
+			} else if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
+				symbol = tBar
+			} else {
+				symbol = dBar
+			}
+
+			// respect color of the group
+			fmt.Fprint(w, groupColor(i, symbol))
+		}
+
+		if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
+			fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+		} else if i >= vtxIdx && i < len(groups)-1 {
+			fmt.Fprint(w, groupColor(vtxIdx, hdrBar))
+		} else {
+			fmt.Fprint(w, " ")
+		}
+	}
+}
+
+func (groups Groups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
 	groups = groups.Shrink()
 
 	var vtxIdx = -1
@@ -452,8 +727,8 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 			// no group here; use the vertex's color
 			fmt.Fprint(w, groupColor(vtxIdx, symbol))
 		} else {
-			if vtx.IsInGroup(g) || (len(vtx.Groups) == 0 && g.Name == RootGroup) {
-				symbol = ch
+			if g.DirectlyContains(vtx) {
+				symbol = vrbBar
 				vtxIdx = i
 			} else if vtxIdx != -1 && i >= vtxIdx {
 				// line between parent and added line
@@ -474,7 +749,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 	}
 }
 
-func (groups Groups) GroupPrefix(w io.Writer, u *UI, group *Group) {
+func (groups Groups) GroupPrefix(w io.Writer, u *UI, group progressGroup) {
 	groups = groups.Shrink()
 
 	var vtxIdx = -1
@@ -490,7 +765,7 @@ func (groups Groups) GroupPrefix(w io.Writer, u *UI, group *Group) {
 			// no group here; use the vertex's color
 			fmt.Fprint(w, groupColor(vtxIdx, symbol))
 		} else {
-			if group.Id == g.Id {
+			if group.ID() == g.ID() {
 				symbol = "▼"
 				vtxIdx = i
 			} else if vtxIdx != -1 && i >= vtxIdx {
@@ -519,7 +794,7 @@ func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 		var symbol string
 		if g == nil {
 			symbol = " "
-		} else if vtx.IsInGroup(g) || (len(vtx.Groups) == 0 && g.Name == RootGroup) {
+		} else if g.DirectlyContains(vtx) {
 			symbol = vbBar
 		} else {
 			symbol = dBar
@@ -550,14 +825,9 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 		// }
 
 		var isActive bool
-		for _, a := range active {
-			for _, id := range a.Groups {
-				for vg := id; vg != ""; vg = allGroups[vg].GetParent() {
-					if vg == g.Id {
-						isActive = true
-						break
-					}
-				}
+		for _, vtx := range active {
+			if g.IsActiveVia(vtx, allGroups) {
+				isActive = true
 			}
 		}
 
