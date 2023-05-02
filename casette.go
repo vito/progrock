@@ -188,14 +188,35 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 	casette.l.Lock()
 	defer casette.l.Unlock()
 
-	groups := Groups{}
+	var completed []*Vertex
+	var runningAndFailed []*Vertex
 
 	runningByGroup := map[string]int{}
-
-	var runningAndFailed []*Vertex
-	for i, dig := range casette.order {
+	for _, dig := range casette.order {
 		vtx := casette.vertexes[dig]
 
+		if vtx.Started == nil {
+			// ignore pending vertexes; too complicated to handle
+			continue
+		}
+
+		if vtx.Completed == nil || vtx.Error != nil {
+			runningAndFailed = append(runningAndFailed, vtx)
+		} else {
+			completed = append(completed, vtx)
+		}
+
+		for _, id := range vtx.Groups {
+			if vtx.Completed == nil {
+				runningByGroup[id]++
+			}
+		}
+	}
+
+	order := append(completed, runningAndFailed...)
+	groups := Groups{}
+
+	for i, vtx := range order {
 		for _, g := range groups {
 			if g != nil {
 				g.Witness(vtx)
@@ -222,18 +243,14 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			} else {
 				groups = groups.AddGroup(w, u, casette.groups, group)
 			}
-
-			if vtx.Completed == nil {
-				runningByGroup[id]++
-			}
 		}
 
-		if vtx.Completed == nil || vtx.Error != nil {
-			runningAndFailed = append(runningAndFailed, vtx)
-			continue
+		symbol := block
+		if vtx.Completed == nil {
+			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
 
-		groups.VertexPrefix(w, u, vtx, block)
+		groups.VertexPrefix(w, u, vtx, symbol)
 		if err := u.RenderVertex(w, vtx); err != nil {
 			return err
 		}
@@ -266,32 +283,6 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 		if len(haveInput) > 0 {
 			groups = groups.AddVertex(w, u, casette.groups, vtx, haveInput)
-		}
-	}
-
-	for i, vtx := range runningAndFailed {
-		groups = groups.Reap(w, u, casette.groups, runningAndFailed[i:])
-
-		symbol := block
-		if vtx.Completed == nil {
-			symbol, _, _ = u.Spinner.ViewFrame(pulse)
-		}
-
-		groups.VertexPrefix(w, u, vtx, symbol)
-		if err := u.RenderVertex(w, vtx); err != nil {
-			return err
-		}
-
-		tasks := casette.tasks[vtx.Id]
-		for _, t := range tasks {
-			groups.TaskPrefix(w, u, vtx)
-			if err := u.RenderTask(w, t); err != nil {
-				return err
-			}
-		}
-
-		if vtx.Started == nil {
-			continue
 		}
 
 		term := casette.vertexLogs(vtx.Id)
@@ -340,25 +331,6 @@ func (casette *Casette) insert(vtx *Vertex) {
 	}
 
 	casette.order = append(casette.order, vtx.Id)
-}
-
-func (casette *Casette) isAncestor(a, b *Vertex) bool {
-	for _, dig := range b.Inputs {
-		if dig == a.Id {
-			return true
-		}
-
-		ancestor, found := casette.vertexes[dig]
-		if !found {
-			continue
-		}
-
-		if casette.isAncestor(a, ancestor) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (casette *Casette) termHeight() int {
@@ -639,7 +611,7 @@ func (groups Groups) AddVertex(w io.Writer, u *UI, allGroups map[string]*Group, 
 	return groups
 }
 
-func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
+func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string) {
 	var firstParentIdx = -1
 	var lastParentIdx = -1
 	var vtxIdx = -1
@@ -676,7 +648,7 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 			}
 		} else {
 			if g.DirectlyContains(vtx) {
-				symbol = block
+				symbol = selfSymbol
 				vtxIdx = i
 			} else if g.Created(vtx) && i > vtxIdx {
 				if g.WitnessedAll() {
@@ -717,6 +689,12 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 				fmt.Fprint(w, groupColor(firstParentIdx, lCaret))
 			} else {
 				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+			}
+		} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
+			if i == vtxIdx {
+				fmt.Fprint(w, groupColor(lastParentIdx, lCaret))
+			} else {
+				fmt.Fprint(w, groupColor(lastParentIdx, hBar))
 			}
 		} else {
 			fmt.Fprint(w, " ")
