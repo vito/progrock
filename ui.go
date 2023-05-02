@@ -142,6 +142,15 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, casette *Casette, w io.Wr
 }
 
 func (ui *UI) NewModel(casette *Casette, interrupt context.CancelFunc, w io.Writer) *Model {
+	helpModel := help.New()
+	helpModel.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
+	helpModel.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
+	helpModel.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
+	helpModel.Styles.Ellipsis = helpModel.Styles.ShortSeparator.Copy()
+	helpModel.Styles.FullKey = helpModel.Styles.ShortKey.Copy()
+	helpModel.Styles.FullDesc = helpModel.Styles.ShortDesc.Copy()
+	helpModel.Styles.FullSeparator = helpModel.Styles.ShortSeparator.Copy()
+
 	return &Model{
 		casette: casette,
 		ui:      ui,
@@ -155,7 +164,7 @@ func (ui *UI) NewModel(casette *Casette, interrupt context.CancelFunc, w io.Writ
 		maxHeight: 24,
 		viewport:  viewport.New(80, 24),
 
-		help: help.New(),
+		help: helpModel,
 	}
 }
 
