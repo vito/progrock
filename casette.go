@@ -10,7 +10,8 @@ import (
 	"github.com/vito/progrock/ui"
 )
 
-// Casette is a Writer that renders a UI to a terminal.
+// Casette is a Writer that collects all progress output for displaying in a
+// terminal UI.
 type Casette struct {
 	order    []string
 	groups   map[string]*Group
@@ -62,6 +63,7 @@ const (
 	inactiveGroupSymbol = vBar
 )
 
+// NewCasette returns a new Casette.
 func NewCasette() *Casette {
 	return &Casette{
 		groups:   make(map[string]*Group),
@@ -79,6 +81,8 @@ func NewCasette() *Casette {
 
 var _ Writer = &Casette{}
 
+// WriteStatus implements Writer by collecting vertex and task updates and
+// writing vertex logs to internal virtual terminals.
 func (casette *Casette) WriteStatus(status *StatusUpdate) error {
 	casette.l.Lock()
 	defer casette.l.Unlock()
@@ -125,6 +129,7 @@ func (casette *Casette) WriteStatus(status *StatusUpdate) error {
 	return nil
 }
 
+// CompletedCount returns the number of completed vertexes.
 func (casette *Casette) CompletedCount() int {
 	casette.l.Lock()
 	defer casette.l.Unlock()
@@ -137,12 +142,14 @@ func (casette *Casette) CompletedCount() int {
 	return completed
 }
 
+// TotalCount returns the total number of vertexes.
 func (casette *Casette) TotalCount() int {
 	casette.l.Lock()
 	defer casette.l.Unlock()
 	return len(casette.vertexes)
 }
 
+// Close marks the casette as done.
 func (casette *Casette) Close() error {
 	casette.l.Lock()
 	casette.done = true
@@ -150,18 +157,23 @@ func (casette *Casette) Close() error {
 	return nil
 }
 
+// VerboseEdges sets whether to display edges between vertexes in the same
+// group.
 func (casette *Casette) VerboseEdges(verbose bool) {
 	casette.l.Lock()
 	defer casette.l.Unlock()
 	casette.verboseEdges = verbose
 }
 
+// ShowInternal sets whether to show internal vertexes in the output.
 func (casette *Casette) ShowInternal(show bool) {
 	casette.l.Lock()
 	defer casette.l.Unlock()
 	casette.showInternal = show
 }
 
+// SetWindowSize sets the size of the terminal UI, which influences the
+// dimensions for vertex logs, progress bars, etc.
 func (casette *Casette) SetWindowSize(w, h int) {
 	casette.l.Lock()
 	casette.width = w
@@ -195,11 +207,6 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 	for _, dig := range casette.order {
 		vtx := casette.vertexes[dig]
 
-		if vtx.Started == nil {
-			// ignore pending vertexes; too complicated to handle
-			continue
-		}
-
 		if vtx.Completed == nil || vtx.Error != nil {
 			runningAndFailed = append(runningAndFailed, vtx)
 		} else {
@@ -214,7 +221,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 	}
 
 	order := append(completed, runningAndFailed...)
-	groups := Groups{}
+	groups := progressGroups{}
 
 	for i, vtx := range order {
 		for _, g := range groups {
@@ -279,20 +286,22 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			groups = groups.AddVertex(w, u, casette.groups, vtx, haveInput)
 		}
 
-		term := casette.vertexLogs(vtx.Id)
+		if vtx.Completed == nil || vtx.Error != nil {
+			term := casette.vertexLogs(vtx.Id)
 
-		if vtx.Error != nil {
-			term.SetHeight(term.UsedHeight())
-		} else {
-			term.SetHeight(casette.termHeight())
-		}
+			if vtx.Error != nil {
+				term.SetHeight(term.UsedHeight())
+			} else {
+				term.SetHeight(casette.termHeight())
+			}
 
-		buf := new(bytes.Buffer)
-		groups.TermPrefix(buf, u, vtx)
-		term.SetPrefix(buf.String())
+			buf := new(bytes.Buffer)
+			groups.TermPrefix(buf, u, vtx)
+			term.SetPrefix(buf.String())
 
-		if err := u.RenderTerm(w, term); err != nil {
-			return err
+			if err := u.RenderTerm(w, term); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -341,7 +350,7 @@ func (casette *Casette) vertexLogs(vertex string) *ui.Vterm {
 	return term
 }
 
-type Groups []progressGroup
+type progressGroups []progressGroup
 
 type progressGroup interface {
 	ID() string
@@ -392,11 +401,11 @@ func (vg vertexGroup) ID() string {
 }
 
 func (vg vertexGroup) DirectlyContains(vtx *Vertex) bool {
-	return false //vtx.HasInput(vg.Vertex) // TODO
+	return false
 }
 
 func (vg vertexGroup) IsActiveVia(other *Vertex, allGroups map[string]*Group) bool {
-	return other.HasInput(vg.Vertex) // TODO
+	return other.HasInput(vg.Vertex)
 }
 
 func (vg vertexGroup) Created(other *Vertex) bool {
@@ -415,22 +424,12 @@ func (vg vertexGroup) WitnessedAll() bool {
 	return len(vg.witnessed) == len(vg.outputs)
 }
 
-func (groups Groups) shrink() Groups {
-	for i := len(groups) - 1; i >= 0; i-- {
-		if groups[i] == nil {
-			groups = groups[:i]
-		} else {
-			break
-		}
-	}
-	return groups
-}
-
-func (groups Groups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, group *Group) Groups {
+// AddVertex adds a group to the set of groups. It also renders the new groups.
+func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, group *Group) progressGroups {
 	pg := progGroup{group}
 
 	if len(groups) == 0 && group.Name == RootGroup {
-		return Groups{pg}
+		return progressGroups{pg}
 	}
 
 	parentIdx := -1
@@ -518,7 +517,9 @@ func (groups Groups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, g
 	return groups
 }
 
-func (groups Groups) AddVertex(w io.Writer, u *UI, allGroups map[string]*Group, vtx *Vertex, outputs []*Vertex) Groups {
+// AddVertex adds a vertex-group to the set of groups, which is used to connect
+// vertex inputs and outputs. It also renders the new groups.
+func (groups progressGroups) AddVertex(w io.Writer, u *UI, allGroups map[string]*Group, vtx *Vertex, outputs []*Vertex) progressGroups {
 	vg := vertexGroup{
 		vtx,
 		outputs,
@@ -605,7 +606,8 @@ func (groups Groups) AddVertex(w io.Writer, u *UI, allGroups map[string]*Group, 
 	return groups
 }
 
-func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string) {
+// VertexPrefix prints the prefix for a vertex.
+func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string) {
 	var firstParentIdx = -1
 	var lastParentIdx = -1
 	var vtxIdx = -1
@@ -696,7 +698,8 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol st
 	}
 }
 
-func (groups Groups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
+// TaskPrefix prints the prefix for a vertex's task.
+func (groups progressGroups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
 	groups.printPrefix(w, func(g progressGroup, vtx *Vertex) string {
 		if g.DirectlyContains(vtx) {
 			return taskSymbol
@@ -705,7 +708,8 @@ func (groups Groups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
 	}, vtx)
 }
 
-func (groups Groups) GroupPrefix(w io.Writer, u *UI, group progressGroup) {
+// GroupPrefix prints the prefix for newly added group.
+func (groups progressGroups) GroupPrefix(w io.Writer, u *UI, group progressGroup) {
 	groups.printPrefix(w, func(g progressGroup, _ *Vertex) string {
 		if group.ID() == g.ID() {
 			return dCaret
@@ -714,7 +718,8 @@ func (groups Groups) GroupPrefix(w io.Writer, u *UI, group progressGroup) {
 	}, nil)
 }
 
-func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
+// TermPrefix prints the prefix for a vertex's terminal output.
+func (groups progressGroups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 	groups.printPrefix(w, func(g progressGroup, vtx *Vertex) string {
 		if g.DirectlyContains(vtx) {
 			return vbBar
@@ -723,35 +728,13 @@ func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 	}, vtx)
 }
 
-func (groups Groups) printPrefix(w io.Writer, sym func(progressGroup, *Vertex) string, vtx *Vertex) {
-	for i, g := range groups {
-		if g == nil {
-			fmt.Fprint(w, " ")
-		} else {
-			fmt.Fprint(w, groupColor(i, sym(g, vtx)))
-		}
-		fmt.Fprint(w, " ")
-	}
-}
-
-func groupColor(i int, str string) string {
-	return termenv.String(str).Foreground(
-		termenv.ANSIColor((i+1)%7) + 1,
-	).String()
-}
-
-func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, active []*Vertex) Groups {
+// Reap removes groups that are no longer active.
+func (groups progressGroups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, active []*Vertex) progressGroups {
 	reaped := map[int]bool{}
 	for i, g := range groups {
 		if g == nil {
 			continue
 		}
-
-		// if allGroups[g.Id].Completed == nil {
-		// 	// let groups linger as long as they're not completed, otherwise future
-		// 	// child groups will be orphaned
-		// 	continue
-		// }
 
 		var isActive bool
 		for _, vtx := range active {
@@ -782,4 +765,33 @@ func (groups Groups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, activ
 	}
 
 	return groups.shrink()
+}
+
+// shrink removes nil groups from the end of the slice.
+func (groups progressGroups) shrink() progressGroups {
+	for i := len(groups) - 1; i >= 0; i-- {
+		if groups[i] == nil {
+			groups = groups[:i]
+		} else {
+			break
+		}
+	}
+	return groups
+}
+
+func (groups progressGroups) printPrefix(w io.Writer, sym func(progressGroup, *Vertex) string, vtx *Vertex) {
+	for i, g := range groups {
+		if g == nil {
+			fmt.Fprint(w, " ")
+		} else {
+			fmt.Fprint(w, groupColor(i, sym(g, vtx)))
+		}
+		fmt.Fprint(w, " ")
+	}
+}
+
+func groupColor(i int, str string) string {
+	return termenv.String(str).Foreground(
+		termenv.ANSIColor((i+1)%7) + 1,
+	).String()
 }
