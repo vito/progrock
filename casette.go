@@ -228,13 +228,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			continue
 		}
 
-		var active []*Vertex
-		for _, rest := range casette.order[i:] {
-			active = append(active, casette.vertexes[rest])
-		}
-		active = append(active, runningAndFailed...)
-
-		groups = groups.Reap(w, u, casette.groups, active)
+		groups = groups.Reap(w, u, casette.groups, order[i:])
 
 		for _, id := range vtx.Groups {
 			group := casette.groups[id]
@@ -263,7 +257,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			}
 		}
 
-		activeExceptCurrent := active[1:]
+		activeExceptCurrent := order[1:]
 
 		var haveInput []*Vertex
 		for _, a := range activeExceptCurrent {
@@ -639,10 +633,10 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol st
 	for i, g := range groups {
 		var symbol string
 		if g == nil {
-			if firstParentIdx != -1 && vtxIdx > firstParentIdx && i >= firstParentIdx && i < vtxIdx {
+			if firstParentIdx != -1 && i < vtxIdx && i >= firstParentIdx {
 				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
-			} else if firstParentIdx != -1 && vtxIdx < firstParentIdx && i >= vtxIdx && i < lastParentIdx {
-				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+			} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
+				fmt.Fprint(w, groupColor(lastParentIdx, hBar))
 			} else {
 				fmt.Fprint(w, " ")
 			}

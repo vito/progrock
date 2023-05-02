@@ -472,3 +472,56 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupAllInputs(t *testin
 
 	testGolden(t, casette)
 }
+
+func TestVertexInputsCrossGapLeft(t *testing.T) {
+	casette := progrock.NewCasette()
+
+	recorder := progrock.NewRecorder(casette)
+
+	ag := recorder.WithGroup("a")
+	bg := ag.WithGroup("b")
+	cg := bg.WithGroup("c")
+
+	ag.Vertex("a1", "vertex a1").Done(nil)
+	bg.Vertex("b1", "vertex b1").Done(nil)
+
+	ag.WithGroup("group z").Vertex(
+		"z1",
+		"vertex z1",
+		progrock.WithInputs("a1"),
+	).Done(nil)
+
+	cg.Vertex("b2", "vertex b2").Done(nil)
+
+	ag.WithGroup("group z").Vertex(
+		"z2",
+		"vertex z2",
+		progrock.WithInputs("a1"),
+	).Done(nil)
+
+	testGolden(t, casette)
+}
+
+func TestVertexInputsCrossGapRight(t *testing.T) {
+	casette := progrock.NewCasette()
+
+	recorder := progrock.NewRecorder(casette)
+
+	ag := recorder.WithGroup("a")
+	bg := ag.WithGroup("b")
+	cg := bg.WithGroup("c")
+	dg := cg.WithGroup("d")
+
+	ag.Vertex("a1", "vertex a1").Done(nil)
+	bg.Vertex("b1", "vertex b1").Done(nil)
+	cg.Vertex("c1", "vertex c1").Done(nil)
+	dg.Vertex("d1", "vertex d1").Done(nil)
+
+	bg.WithGroup("group z").Vertex(
+		"z",
+		"vertex z",
+		progrock.WithInputs("a1", "d1"),
+	).Done(nil)
+
+	testGolden(t, casette)
+}
