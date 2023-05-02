@@ -30,9 +30,14 @@ func (v *Vertex) IsInGroupOrParent(g *Group, allGroups map[string]*Group) bool {
 }
 
 func (v *Vertex) HasInput(o *Vertex) bool {
-	for _, id := range o.Outputs {
-		if id == v.Id {
+	for _, oid := range o.Outputs {
+		if oid == v.Id {
 			return true
+		}
+		for _, iid := range v.Inputs {
+			if iid == oid {
+				return true
+			}
 		}
 	}
 	for _, id := range v.Inputs {
