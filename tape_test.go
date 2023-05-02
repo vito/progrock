@@ -12,10 +12,10 @@ import (
 
 var ui = progrock.DefaultUI()
 
-func testGolden(t *testing.T, casette *progrock.Casette) {
+func testGolden(t *testing.T, tape *progrock.Tape) {
 	buf := new(bytes.Buffer)
-	casette.Render(buf, ui)
-	casette.SetWindowSize(100, 100)
+	tape.Render(buf, ui)
+	tape.SetWindowSize(100, 100)
 
 	// t.Log("ui:\n" + buf.String())
 
@@ -33,32 +33,32 @@ func runningVtx(rec *progrock.Recorder, digest digest.Digest, name string, opts 
 }
 
 func TestEmpty(t *testing.T) {
-	casette := progrock.NewCasette()
-	testGolden(t, casette)
+	tape := progrock.NewTape()
+	testGolden(t, tape)
 }
 
 func TestSingle(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	recorder.Vertex("a", "vertex a").Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestSingleRunning(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder, "a", "vertex a")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestSinglePending(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	recorder.Record(&progrock.StatusUpdate{
 		Vertexes: []*progrock.Vertex{
@@ -69,181 +69,181 @@ func TestSinglePending(t *testing.T) {
 		},
 	})
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestSingleErrored(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder, "a", "vertex a").Error(fmt.Errorf("nope"))
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestSingleRunningTasks(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	vtx := recorder.Vertex("a", "vertex a")
 	vtx.Task("task 1").Done(nil)
 	vtx.Task("task 2").Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestSingleRunningTasksProgress(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	vtx := recorder.Vertex("a", "vertex a")
 	vtx.Task("task 1").Done(nil)
 	task := vtx.ProgressTask(100, "task 2")
 	task.Current(25)
 	vtx.Task("task 2").Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestDoubleRunning(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder, "a", "vertex a")
 	runningVtx(recorder, "b", "vertex b")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningDone(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder, "a", "vertex a")
 	runningVtx(recorder, "b", "vertex b").Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestDouble(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	recorder.Vertex("a", "vertex a").Done(nil)
 	recorder.Vertex("b", "vertex b").Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestGroupedUngrouped(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	recorder.WithGroup("group 1").Vertex("a", "vertex a").Done(nil)
 	recorder.Vertex("b", "vertex b").Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestInputSameGroup(t *testing.T) {
 	t.Run("no verbose edges", func(t *testing.T) {
-		casette := progrock.NewCasette()
-		recorder := progrock.NewRecorder(casette)
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
 		recorder.Vertex("a", "vertex a").Done(nil)
 		recorder.Vertex("b", "vertex b", progrock.WithInputs("a")).Done(nil)
-		testGolden(t, casette)
+		testGolden(t, tape)
 	})
 
 	t.Run("verbose edges", func(t *testing.T) {
-		casette := progrock.NewCasette()
-		casette.VerboseEdges(true)
-		recorder := progrock.NewRecorder(casette)
+		tape := progrock.NewTape()
+		tape.VerboseEdges(true)
+		recorder := progrock.NewRecorder(tape)
 		recorder.Vertex("a", "vertex a").Done(nil)
 		recorder.Vertex("b", "vertex b", progrock.WithInputs("a")).Done(nil)
-		testGolden(t, casette)
+		testGolden(t, tape)
 	})
 }
 
 func TestOutputInputSameGroup(t *testing.T) {
 	t.Run("no verbose edges", func(t *testing.T) {
-		casette := progrock.NewCasette()
-		recorder := progrock.NewRecorder(casette)
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
 		vtx := recorder.Vertex("a", "vertex a")
 		vtx.Output("foo")
 		vtx.Done(nil)
 		recorder.Vertex("b", "vertex b", progrock.WithInputs("foo")).Done(nil)
-		testGolden(t, casette)
+		testGolden(t, tape)
 	})
 
 	t.Run("verbose edges", func(t *testing.T) {
-		casette := progrock.NewCasette()
-		casette.VerboseEdges(true)
-		recorder := progrock.NewRecorder(casette)
+		tape := progrock.NewTape()
+		tape.VerboseEdges(true)
+		recorder := progrock.NewRecorder(tape)
 		vtx := recorder.Vertex("a", "vertex a")
 		vtx.Output("foo")
 		vtx.Done(nil)
 		recorder.Vertex("b", "vertex b", progrock.WithInputs("foo")).Done(nil)
-		testGolden(t, casette)
+		testGolden(t, tape)
 	})
 }
 
 func TestInputDifferentGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	recorder.Vertex("a", "vertex a").Done(nil)
 	recorder.WithGroup("group 1").Vertex("b", "vertex b", progrock.WithInputs("a")).Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestOutputInputDifferentGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	vtx := recorder.Vertex("a", "vertex a")
 	vtx.Output("foo")
 	vtx.Done(nil)
 	recorder.WithGroup("group 1").Vertex("b", "vertex b", progrock.WithInputs("foo")).Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestInternal(t *testing.T) {
 	t.Run("no show internal", func(t *testing.T) {
-		casette := progrock.NewCasette()
-		recorder := progrock.NewRecorder(casette)
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
 		recorder.Vertex("a", "vertex a").Done(nil)
 		recorder.Vertex("internal", "internal vertex", progrock.Internal()).Done(nil)
-		testGolden(t, casette)
+		testGolden(t, tape)
 	})
 
 	t.Run("show internal", func(t *testing.T) {
-		casette := progrock.NewCasette()
-		casette.ShowInternal(true)
-		recorder := progrock.NewRecorder(casette)
+		tape := progrock.NewTape()
+		tape.ShowInternal(true)
+		recorder := progrock.NewRecorder(tape)
 		recorder.Vertex("a", "vertex a").Done(nil)
 		recorder.Vertex("internal", "internal vertex", progrock.Internal()).Done(nil)
-		testGolden(t, casette)
+		testGolden(t, tape)
 	})
 }
 
 func TestSingleDoneTasks(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	vtx := recorder.Vertex("a", "vertex a")
 	vtx.Task("task 1").Done(nil)
 	vtx.Task("task 2").Done(nil)
 	vtx.Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestSingleDoneTasksProgress(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	vtx := recorder.Vertex("a", "vertex a")
 	vtx.Task("task 1").Done(nil)
 	task := vtx.ProgressTask(100, "task 2")
@@ -251,35 +251,35 @@ func TestSingleDoneTasksProgress(t *testing.T) {
 	vtx.Task("task 2").Done(nil)
 	vtx.Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningDifferentGroups(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a")
 	runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
 	runningVtx(recorder.WithGroup("group c"), "c", "vertex c")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningDifferentGroupsTask(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a")
 	runningVtx(recorder.WithGroup("group b"), "b", "vertex b").Task("b task").Done(nil)
 	runningVtx(recorder.WithGroup("group c"), "c", "vertex c")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinue(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a")
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
 	runningVtx(recorder.WithGroup("group c"), "c", "vertex c")
@@ -288,13 +288,13 @@ func TestRunningGroupEndsOthersContinue(t *testing.T) {
 	b2.Done(nil)
 	runningVtx(recorder.WithGroup("group c"), "c2", "vertex c2")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromRoot(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a")
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
 	runningVtx(recorder.WithGroup("group c"), "c", "vertex c")
@@ -305,13 +305,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromRoot(t *testing.T) {
 
 	runningVtx(recorder.WithGroup("group d"), "d", "vertex d")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromFirstGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
 	runningVtx(recorder.WithGroup("group c"), "c", "vertex c").Done(nil)
@@ -324,13 +324,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromFirstGroup(t *testing.T) {
 
 	runningVtx(recorder.WithGroup("group a").WithGroup("group a.a"), "z", "vertex z")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
 	runningVtx(recorder.WithGroup("group c"), "c", "vertex c").Done(nil)
@@ -343,13 +343,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroup(t *testing.T) {
 
 	runningVtx(recorder.WithGroup("group e").WithGroup("group e.a"), "z", "vertex z")
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromFirstGroupSingleInputFirstGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
@@ -368,13 +368,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromFirstGroupSingleInputFirstGr
 		progrock.WithInputs("a"),
 	)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromFirstGroupSingleInputLastGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
@@ -393,13 +393,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromFirstGroupSingleInputLastGro
 		progrock.WithInputs("e"),
 	)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupSingleInputFirstGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
@@ -418,13 +418,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupSingleInputFirstGro
 		progrock.WithInputs("a"),
 	)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupSingleInputLastGroup(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
@@ -444,13 +444,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupSingleInputLastGrou
 		progrock.WithInputs("d2"),
 	)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupAllInputs(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	runningVtx(recorder.WithGroup("group a"), "a", "vertex a").Done(nil)
 	b1 := runningVtx(recorder.WithGroup("group b"), "b", "vertex b")
@@ -470,13 +470,13 @@ func TestRunningGroupEndsOthersContinueNewSpawnsFromLastGroupAllInputs(t *testin
 		progrock.WithInputs("a", "b", "c", "d", "e", "c2", "d2"),
 	)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestVertexInputsCrossGapLeft(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	ag := recorder.WithGroup("a")
 	bg := ag.WithGroup("b")
@@ -499,13 +499,13 @@ func TestVertexInputsCrossGapLeft(t *testing.T) {
 		progrock.WithInputs("a1"),
 	).Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }
 
 func TestVertexInputsCrossGapRight(t *testing.T) {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 
-	recorder := progrock.NewRecorder(casette)
+	recorder := progrock.NewRecorder(tape)
 
 	ag := recorder.WithGroup("a")
 	bg := ag.WithGroup("b")
@@ -523,5 +523,5 @@ func TestVertexInputsCrossGapRight(t *testing.T) {
 		progrock.WithInputs("a1", "d1"),
 	).Done(nil)
 
-	testGolden(t, casette)
+	testGolden(t, tape)
 }

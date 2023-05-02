@@ -101,18 +101,18 @@ func (ui *UI) RenderTerm(w io.Writer, term *ui.Vterm) error {
 	return err
 }
 
-func (u *UI) RenderStatus(w io.Writer, casette *Casette) error {
+func (u *UI) RenderStatus(w io.Writer, tape *Tape) error {
 	return u.tmpl.Lookup("status.tmpl").Execute(w, struct {
 		Spinner ui.Spinner
-		Casette *Casette
+		Tape *Tape
 	}{
 		Spinner: u.Spinner,
-		Casette: casette,
+		Tape: tape,
 	})
 }
 
-func (ui *UI) RenderLoop(interrupt context.CancelFunc, casette *Casette, w io.Writer, tui bool) func() {
-	model := ui.NewModel(casette, interrupt, w)
+func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, tui bool) func() {
+	model := ui.NewModel(tape, interrupt, w)
 
 	opts := []tea.ProgramOption{tea.WithOutput(w)}
 
@@ -141,7 +141,7 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, casette *Casette, w io.Wr
 	}
 }
 
-func (ui *UI) NewModel(casette *Casette, interrupt context.CancelFunc, w io.Writer) *Model {
+func (ui *UI) NewModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *Model {
 	helpModel := help.New()
 	helpModel.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
 	helpModel.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
@@ -152,7 +152,7 @@ func (ui *UI) NewModel(casette *Casette, interrupt context.CancelFunc, w io.Writ
 	helpModel.Styles.FullSeparator = helpModel.Styles.ShortSeparator.Copy()
 
 	return &Model{
-		casette: casette,
+		tape: tape,
 		ui:      ui,
 
 		interrupt: interrupt,
@@ -169,7 +169,7 @@ func (ui *UI) NewModel(casette *Casette, interrupt context.CancelFunc, w io.Writ
 }
 
 type Model struct {
-	casette *Casette
+	tape *Tape
 
 	ui *UI
 
@@ -189,7 +189,7 @@ type Model struct {
 }
 
 func (model *Model) Print(w io.Writer) {
-	if err := model.casette.Render(w, model.ui); err != nil {
+	if err := model.tape.Render(w, model.ui); err != nil {
 		fmt.Fprintln(w, "failed to render graph:", err)
 		return
 	}
@@ -232,7 +232,7 @@ func (m *Model) SetWindowSize(w, h int) {
 	m.maxHeight = h
 	m.viewport.Width = m.maxWidth
 	m.help.Width = m.maxWidth / 2
-	m.casette.SetWindowSize(w, h)
+	m.tape.SetWindowSize(w, h)
 	m.ui.SetWindowSize(w, h)
 }
 
@@ -313,7 +313,7 @@ func (m *Model) View() string {
 	widthMinusHelp -= len(helpSep)
 
 	buf := new(bytes.Buffer)
-	m.ui.RenderStatus(buf, m.casette)
+	m.ui.RenderStatus(buf, m.tape)
 
 	footer := lipgloss.JoinHorizontal(
 		lipgloss.Bottom,

@@ -10,9 +10,9 @@ import (
 	"github.com/vito/progrock/ui"
 )
 
-// Casette is a Writer that collects all progress output for displaying in a
+// Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
-type Casette struct {
+type Tape struct {
 	order    []string
 	groups   map[string]*Group
 	vertexes map[string]*Vertex
@@ -63,9 +63,9 @@ const (
 	inactiveGroupSymbol = vBar
 )
 
-// NewCasette returns a new Casette.
-func NewCasette() *Casette {
-	return &Casette{
+// NewTape returns a new Tape.
+func NewTape() *Tape {
+	return &Tape{
 		groups:   make(map[string]*Group),
 		vertexes: make(map[string]*Vertex),
 		tasks:    make(map[string][]*VertexTask),
@@ -79,32 +79,32 @@ func NewCasette() *Casette {
 	}
 }
 
-var _ Writer = &Casette{}
+var _ Writer = &Tape{}
 
 // WriteStatus implements Writer by collecting vertex and task updates and
 // writing vertex logs to internal virtual terminals.
-func (casette *Casette) WriteStatus(status *StatusUpdate) error {
-	casette.l.Lock()
-	defer casette.l.Unlock()
+func (tape *Tape) WriteStatus(status *StatusUpdate) error {
+	tape.l.Lock()
+	defer tape.l.Unlock()
 
 	for _, g := range status.Groups {
-		casette.groups[g.Id] = g
+		tape.groups[g.Id] = g
 	}
 
 	for _, v := range status.Vertexes {
-		existing, found := casette.vertexes[v.Id]
+		existing, found := tape.vertexes[v.Id]
 		if !found {
-			casette.insert(v)
+			tape.insert(v)
 		} else if existing.Completed != nil && v.Cached {
 			// don't clobber the "real" vertex with a cache
 			// TODO: count cache hits?
 		} else {
-			casette.vertexes[v.Id] = v
+			tape.vertexes[v.Id] = v
 		}
 	}
 
 	for _, t := range status.Tasks {
-		tasks := casette.tasks[t.Vertex]
+		tasks := tape.tasks[t.Vertex]
 		var updated bool
 		for i, task := range tasks {
 			if task.Name == t.Name {
@@ -114,12 +114,12 @@ func (casette *Casette) WriteStatus(status *StatusUpdate) error {
 		}
 		if !updated {
 			tasks = append(tasks, t)
-			casette.tasks[t.Vertex] = tasks
+			tape.tasks[t.Vertex] = tasks
 		}
 	}
 
 	for _, l := range status.Logs {
-		sink := casette.vertexLogs(l.Vertex)
+		sink := tape.vertexLogs(l.Vertex)
 		_, err := sink.Write(l.Data)
 		if err != nil {
 			return fmt.Errorf("write logs: %w", err)
@@ -130,11 +130,11 @@ func (casette *Casette) WriteStatus(status *StatusUpdate) error {
 }
 
 // CompletedCount returns the number of completed vertexes.
-func (casette *Casette) CompletedCount() int {
-	casette.l.Lock()
-	defer casette.l.Unlock()
+func (tape *Tape) CompletedCount() int {
+	tape.l.Lock()
+	defer tape.l.Unlock()
 	var completed int
-	for _, v := range casette.vertexes {
+	for _, v := range tape.vertexes {
 		if v.Completed != nil {
 			completed++
 		}
@@ -143,46 +143,46 @@ func (casette *Casette) CompletedCount() int {
 }
 
 // TotalCount returns the total number of vertexes.
-func (casette *Casette) TotalCount() int {
-	casette.l.Lock()
-	defer casette.l.Unlock()
-	return len(casette.vertexes)
+func (tape *Tape) TotalCount() int {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	return len(tape.vertexes)
 }
 
-// Close marks the casette as done.
-func (casette *Casette) Close() error {
-	casette.l.Lock()
-	casette.done = true
-	casette.l.Unlock()
+// Close marks the Tape as done. (This currently has no effect.)
+func (tape *Tape) Close() error {
+	tape.l.Lock()
+	tape.done = true
+	tape.l.Unlock()
 	return nil
 }
 
 // VerboseEdges sets whether to display edges between vertexes in the same
 // group.
-func (casette *Casette) VerboseEdges(verbose bool) {
-	casette.l.Lock()
-	defer casette.l.Unlock()
-	casette.verboseEdges = verbose
+func (tape *Tape) VerboseEdges(verbose bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.verboseEdges = verbose
 }
 
 // ShowInternal sets whether to show internal vertexes in the output.
-func (casette *Casette) ShowInternal(show bool) {
-	casette.l.Lock()
-	defer casette.l.Unlock()
-	casette.showInternal = show
+func (tape *Tape) ShowInternal(show bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.showInternal = show
 }
 
 // SetWindowSize sets the size of the terminal UI, which influences the
 // dimensions for vertex logs, progress bars, etc.
-func (casette *Casette) SetWindowSize(w, h int) {
-	casette.l.Lock()
-	casette.width = w
-	casette.height = h
-	for _, l := range casette.logs {
+func (tape *Tape) SetWindowSize(w, h int) {
+	tape.l.Lock()
+	tape.width = w
+	tape.height = h
+	for _, l := range tape.logs {
 		l.SetWidth(w)
 	}
-	casette.debug.SetWidth(w)
-	casette.l.Unlock()
+	tape.debug.SetWidth(w)
+	tape.l.Unlock()
 }
 
 var pulse ui.Frames
@@ -196,16 +196,16 @@ func init() {
 	}
 }
 
-func (casette *Casette) Render(w io.Writer, u *UI) error {
-	casette.l.Lock()
-	defer casette.l.Unlock()
+func (tape *Tape) Render(w io.Writer, u *UI) error {
+	tape.l.Lock()
+	defer tape.l.Unlock()
 
 	var completed []*Vertex
 	var runningAndFailed []*Vertex
 
 	runningByGroup := map[string]int{}
-	for _, dig := range casette.order {
-		vtx := casette.vertexes[dig]
+	for _, dig := range tape.order {
+		vtx := tape.vertexes[dig]
 
 		if vtx.Completed == nil || vtx.Error != nil {
 			runningAndFailed = append(runningAndFailed, vtx)
@@ -230,19 +230,19 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			}
 		}
 
-		if vtx.Internal && !casette.showInternal {
+		if vtx.Internal && !tape.showInternal {
 			// skip internal vertices
 			continue
 		}
 
-		groups = groups.Reap(w, u, casette.groups, order[i:])
+		groups = groups.Reap(w, u, tape.groups, order[i:])
 
 		for _, id := range vtx.Groups {
-			group := casette.groups[id]
+			group := tape.groups[id]
 			if group == nil {
-				fmt.Fprintln(casette.debug, "group is nil:", id)
+				fmt.Fprintln(tape.debug, "group is nil:", id)
 			} else {
-				groups = groups.AddGroup(w, u, casette.groups, group)
+				groups = groups.AddGroup(w, u, tape.groups, group)
 			}
 		}
 
@@ -256,7 +256,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 			return err
 		}
 
-		tasks := casette.tasks[vtx.Id]
+		tasks := tape.tasks[vtx.Id]
 		for _, t := range tasks {
 			groups.TaskPrefix(w, u, vtx)
 			if err := u.RenderTask(w, t); err != nil {
@@ -268,7 +268,7 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 
 		var haveInput []*Vertex
 		for _, a := range activeExceptCurrent {
-			if a.HasInput(vtx) && (!a.IsSibling(vtx) || casette.verboseEdges) {
+			if a.HasInput(vtx) && (!a.IsSibling(vtx) || tape.verboseEdges) {
 				// avoid forking for vertexes in the same group; often more noisy than helpful
 				haveInput = append(haveInput, a)
 			}
@@ -283,16 +283,16 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		}
 
 		if len(haveInput) > 0 {
-			groups = groups.AddVertex(w, u, casette.groups, vtx, haveInput)
+			groups = groups.AddVertex(w, u, tape.groups, vtx, haveInput)
 		}
 
 		if vtx.Completed == nil || vtx.Error != nil {
-			term := casette.vertexLogs(vtx.Id)
+			term := tape.vertexLogs(vtx.Id)
 
 			if vtx.Error != nil {
 				term.SetHeight(term.UsedHeight())
 			} else {
-				term.SetHeight(casette.termHeight())
+				term.SetHeight(tape.termHeight())
 			}
 
 			buf := new(bytes.Buffer)
@@ -305,46 +305,46 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		}
 	}
 
-	groups.Reap(w, u, casette.groups, nil)
+	groups.Reap(w, u, tape.groups, nil)
 
-	casette.debug.SetHeight(10)
-	fmt.Fprint(w, casette.debug.View())
+	tape.debug.SetHeight(10)
+	fmt.Fprint(w, tape.debug.View())
 
 	return nil
 }
 
-func (casette *Casette) insert(vtx *Vertex) {
+func (tape *Tape) insert(vtx *Vertex) {
 	if vtx.Started == nil {
 		// skip pending vertices; too complicated to deal with
 		return
 	}
 
-	casette.vertexes[vtx.Id] = vtx
+	tape.vertexes[vtx.Id] = vtx
 
-	for i, dig := range casette.order {
-		other := casette.vertexes[dig]
+	for i, dig := range tape.order {
+		other := tape.vertexes[dig]
 		if other.Started.AsTime().After(vtx.Started.AsTime()) {
-			inserted := make([]string, len(casette.order)+1)
-			copy(inserted, casette.order[:i])
+			inserted := make([]string, len(tape.order)+1)
+			copy(inserted, tape.order[:i])
 			inserted[i] = vtx.Id
-			copy(inserted[i+1:], casette.order[i:])
-			casette.order = inserted
+			copy(inserted[i+1:], tape.order[i:])
+			tape.order = inserted
 			return
 		}
 	}
 
-	casette.order = append(casette.order, vtx.Id)
+	tape.order = append(tape.order, vtx.Id)
 }
 
-func (casette *Casette) termHeight() int {
-	return casette.height / 4
+func (tape *Tape) termHeight() int {
+	return tape.height / 4
 }
 
-func (casette *Casette) vertexLogs(vertex string) *ui.Vterm {
-	term, found := casette.logs[vertex]
+func (tape *Tape) vertexLogs(vertex string) *ui.Vterm {
+	term, found := tape.logs[vertex]
 	if !found {
-		term = ui.NewVterm(casette.width)
-		casette.logs[vertex] = term
+		term = ui.NewVterm(tape.width)
+		tape.logs[vertex] = term
 	}
 
 	return term

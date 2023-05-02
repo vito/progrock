@@ -28,13 +28,13 @@ func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...str
 }
 
 func main() {
-	casette := progrock.NewCasette()
-	rec := progrock.NewRecorder(casette)
+	tape := progrock.NewTape()
+	rec := progrock.NewRecorder(tape)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stop := progrock.DefaultUI().RenderLoop(cancel, casette, os.Stderr, true)
+	stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, true)
 	defer stop()
 
 	failedVtx := rec.Vertex("failed", "failed task in vertex")
