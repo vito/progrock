@@ -1,286 +1,174 @@
 package progrock
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"sync"
-	"time"
 
 	"github.com/jonboulle/clockwork"
-	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock/graph"
-	"github.com/vito/progrock/ui"
+	"google.golang.org/protobuf/proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Clock is used to determine the current time.
 var Clock = clockwork.NewRealClock()
 
-type Writer interface {
-	WriteStatus(*graph.SolveStatus)
-	Close()
-}
-
+// Recorder is a Writer that also tracks a current group.
 type Recorder struct {
 	w Writer
 
-	vertexes  map[digest.Digest]*VertexRecorder
-	vertexesL sync.Mutex
+	Group *Group
 
-	displaying *sync.WaitGroup
+	groups  map[string]*Recorder
+	groupsL sync.Mutex
+
+	// contains sub-groups
+	vertexGroups *vertexGroups
 }
 
-func NewRecorder(w Writer) *Recorder {
+// RootGroup is the name of the toplevel group, which is blank.
+//
+// This is a slight hack, but it gives reasonable meaning to an empty state
+// while sidestepping the issue of figuring out what the "root" name should be.
+const RootGroup = ""
+
+// NewRecorder creates a new Recorder, which writes to the given Writer.
+//
+// It also initializes the "root" group with the associated labels, which
+// involves sending a progress update for the group.
+func NewRecorder(w Writer, labels ...*Label) *Recorder {
+	return newEmptyRecorder(w).WithGroup(RootGroup, labels...)
+}
+
+func newEmptyRecorder(w Writer) *Recorder {
 	return &Recorder{
-		w: w,
-
-		vertexes: map[digest.Digest]*VertexRecorder{},
-
-		displaying: &sync.WaitGroup{},
+		w:            w,
+		groups:       map[string]*Recorder{},
+		vertexGroups: newVertexGroups(),
 	}
 }
 
-func (recorder *Recorder) Record(status *graph.SolveStatus) {
-	for i, v := range status.Vertexes {
-		cp := *v
-		status.Vertexes[i] = &cp
+// Record sends a deep-copy of the status update to the Writer.
+func (recorder *Recorder) Record(status *StatusUpdate) error {
+	// perform a deep-copy so buffered writes don't get mutated, similar to
+	// copying in Write([]byte) when []byte comes from sync.Pool
+	update := proto.Clone(status).(*StatusUpdate)
+
+	for _, vertex := range update.Vertexes {
+		id := digest.Digest(vertex.Id)
+		recorder.vertexGroups.Add(id, vertex.Groups...)
+		vertex.Groups = recorder.vertexGroups.Groups(id, recorder.Group.Id)
 	}
 
-	for i, v := range status.Statuses {
-		cp := *v
-		status.Statuses[i] = &cp
+	return recorder.w.WriteStatus(update)
+}
+
+// WithGroup creates a new group with the given name and labels and sends a
+// progress update.
+//
+// Calling WithGroup with the same name will always return the same Recorder
+// instance so that you can record to a single hierarchy of groups. When the
+// group already exists, the labels argument is ignored.
+func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
+	recorder.groupsL.Lock()
+	defer recorder.groupsL.Unlock()
+
+	existing, found := recorder.groups[name]
+	if found {
+		return existing
 	}
 
-	recorder.w.WriteStatus(status)
-}
-
-func (recorder *Recorder) Display(interrupt context.CancelFunc, ui ui.Components, w io.Writer, r ui.Reader, tui bool) {
-	recorder.displaying.Add(1)
-	go func() {
-		defer recorder.displaying.Done()
-		err := ui.DisplaySolveStatus(interrupt, w, r, tui)
-		if err != nil {
-			fmt.Fprintf(w, "%s\n", termenv.String(fmt.Sprintf("display error: %s", err)).Foreground(termenv.ANSIRed))
-		}
-	}()
-}
-
-func (recorder *Recorder) Stop() {
-	recorder.w.Close()
-	recorder.displaying.Wait()
-}
-
-type recorderKey struct{}
-
-func RecorderToContext(ctx context.Context, recorder *Recorder) context.Context {
-	return context.WithValue(ctx, recorderKey{}, recorder)
-}
-
-func RecorderFromContext(ctx context.Context) *Recorder {
-	rec := ctx.Value(recorderKey{})
-	if rec == nil {
-		return NewRecorder(Discard{})
-	}
-
-	return rec.(*Recorder)
-}
-
-type VertexRecorder struct {
-	Vertex   *graph.Vertex
-	Recorder *Recorder
-
-	tasks     map[string]*TaskRecorder
-	statusesL sync.Mutex
-}
-
-func (recorder *Recorder) Vertex(dig digest.Digest, name string) *VertexRecorder {
-	recorder.vertexesL.Lock()
-	defer recorder.vertexesL.Unlock()
-
-	rec, found := recorder.vertexes[dig]
-	if !found {
-		now := Clock.Now()
-
-		rec = &VertexRecorder{
-			Recorder: recorder,
-
-			Vertex: &graph.Vertex{
-				Digest: dig,
-				Name:   name,
-
-				Started: &now,
-			},
-
-			tasks: map[string]*TaskRecorder{},
-		}
-
-		recorder.vertexes[dig] = rec
-	}
-
-	rec.sync()
-
-	return rec
-}
-
-func (recorder *VertexRecorder) Stdout() io.Writer {
-	return &recordWriter{
-		Stream:         1,
-		VertexRecorder: recorder,
-	}
-}
-
-func (recorder *VertexRecorder) Stderr() io.Writer {
-	return &recordWriter{
-		Stream:         2,
-		VertexRecorder: recorder,
-	}
-}
-
-func (recorder *VertexRecorder) Complete() {
 	now := Clock.Now()
 
-	if recorder.Vertex.Completed == nil {
-		// avoid marking tasks as completed twice; could have been idempotently
-		// created through a dependency
-		recorder.Vertex.Completed = &now
+	id := fmt.Sprintf("%s@%d", name, now.UnixNano())
+
+	g := &Group{
+		Id:      id,
+		Name:    name,
+		Labels:  labels,
+		Started: timestamppb.New(now),
 	}
 
+	if recorder.Group != nil {
+		g.Parent = &recorder.Group.Id
+	}
+
+	subRecorder := newEmptyRecorder(recorder.w)
+	subRecorder.Group = g
+	// vertex groups are global across all subgroups of the root recorder
+	subRecorder.vertexGroups = recorder.vertexGroups
+	subRecorder.sync()
+
+	recorder.groups[name] = subRecorder
+
+	return subRecorder
+}
+
+// Complete marks the current group and all sub-groups as complete, and sends a
+// progress update for each.
+func (recorder *Recorder) Complete() {
+	for _, g := range recorder.groups {
+		g.Complete()
+	}
+	recorder.Group.Completed = timestamppb.New(Clock.Now())
 	recorder.sync()
 }
 
-func (recorder *VertexRecorder) Error(err error) {
-	recorder.Vertex.Error = err.Error()
-	recorder.sync()
+// Close closes the underlying Writer.
+func (recorder *Recorder) Close() error {
+	return recorder.w.Close()
 }
 
-func (recorder *VertexRecorder) Done(err error) {
-	if err != nil {
-		recorder.Error(err)
-	}
-
-	recorder.Complete()
-}
-
-func (recorder *VertexRecorder) Cached() {
-	if recorder.Vertex.Completed != nil {
-		// referenced again by another workload
-		return
-	}
-
-	recorder.Vertex.Cached = true
-	recorder.sync()
-}
-
-func (recorder *VertexRecorder) sync() {
-	recorder.Recorder.Record(&graph.SolveStatus{
-		Vertexes: []*graph.Vertex{
-			recorder.Vertex,
-		},
+// sync sends a progress update for the current group.
+func (recorder *Recorder) sync() {
+	recorder.Record(&StatusUpdate{
+		Groups: []*Group{recorder.Group},
 	})
 }
 
-func (recorder *VertexRecorder) Task(msg string, args ...interface{}) *TaskRecorder {
-	recorder.statusesL.Lock()
-	defer recorder.statusesL.Unlock()
+// vertexGroups tracks the union of all groups seen for a vertex digest.
+type vertexGroups struct {
+	vg map[digest.Digest]map[string]struct{}
+	l  sync.Mutex
+}
 
-	id := fmt.Sprintf(msg, args...)
+func newVertexGroups() *vertexGroups {
+	return &vertexGroups{
+		vg: map[digest.Digest]map[string]struct{}{},
+	}
+}
 
-	task, found := recorder.tasks[id]
-	if !found {
-		now := Clock.Now()
-		task = &TaskRecorder{
-			Status: &graph.VertexStatus{
-				ID:        id,
-				Vertex:    recorder.Vertex.Digest,
-				Name:      "?name?: " + id, // unused/deprecated?
-				Timestamp: now,
-			},
-			VertexRecorder: recorder,
+// Add adds the given groups to the vertex digest.
+func (g *vertexGroups) Add(vertex digest.Digest, groups ...string) {
+	g.l.Lock()
+	defer g.l.Unlock()
+
+	for _, group := range groups {
+		if _, ok := g.vg[vertex]; !ok {
+			g.vg[vertex] = map[string]struct{}{}
 		}
 
-		recorder.tasks[id] = task
+		g.vg[vertex][group] = struct{}{}
+	}
+}
+
+// Groups returns the union of all groups seen for a vertex digest. If no
+// groups are found, the defaultGroup is returned.
+func (g *vertexGroups) Groups(vertex digest.Digest, defaultGroup string) []string {
+	g.l.Lock()
+	defer g.l.Unlock()
+
+	var out []string
+	groups, ok := g.vg[vertex]
+	if ok {
+		for group := range groups {
+			out = append(out, group)
+		}
 	}
 
-	task.sync()
-
-	return task
-}
-
-type TaskRecorder struct {
-	*VertexRecorder
-
-	Status *graph.VertexStatus
-}
-
-func (recorder *TaskRecorder) Wrap(f func() error) error {
-	recorder.Start()
-
-	err := f()
-	recorder.Done(err)
-
-	return err
-}
-
-func (recorder *TaskRecorder) Done(err error) {
-	if err != nil {
-		recorder.Error(err)
+	if len(out) == 0 {
+		out = append(out, defaultGroup)
 	}
 
-	recorder.Complete()
-}
-
-func (recorder *TaskRecorder) Start() {
-	now := Clock.Now()
-	recorder.Status.Started = &now
-	recorder.sync()
-}
-
-func (recorder *TaskRecorder) Complete() {
-	now := Clock.Now()
-
-	if recorder.Status.Started == nil {
-		recorder.Status.Started = &now
-	}
-
-	recorder.Status.Completed = &now
-	recorder.sync()
-}
-
-func (recorder *TaskRecorder) Progress(cur, total int64) {
-	recorder.Status.Current = cur
-	recorder.Status.Total = total
-	recorder.sync()
-}
-
-func (recorder *TaskRecorder) sync() {
-	recorder.Recorder.Record(&graph.SolveStatus{
-		Statuses: []*graph.VertexStatus{
-			recorder.Status,
-		},
-	})
-}
-
-type recordWriter struct {
-	*VertexRecorder
-
-	Stream int
-}
-
-func (w *recordWriter) Write(b []byte) (int, error) {
-	d := make([]byte, len(b))
-	copy(d, b)
-
-	w.Recorder.Record(&graph.SolveStatus{
-		Logs: []*graph.VertexLog{
-			{
-				Vertex:    w.Vertex.Digest,
-				Stream:    w.Stream,
-				Data:      d,
-				Timestamp: time.Now(), // XXX: omit?
-			},
-		},
-	})
-
-	return len(b), nil
+	return out
 }

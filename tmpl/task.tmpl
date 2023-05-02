@@ -1,0 +1,8 @@
+{{- Foreground "8" (printf "[%s]" (.Duration | duration)) -}}
+{{- if .Total -}}
+  {{- " " -}}
+  {{bar .Current .Total}}
+{{- end -}}
+{{- " " -}}
+{{- .Name -}}
+{{- "" }}

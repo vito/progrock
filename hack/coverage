@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# Run tests with coverage
+go test -coverprofile=/tmp/coverage.out ./...
+
+# Generate HTML coverage report
+go tool cover -html=/tmp/coverage.out -o /tmp/coverage.html
+
+# Open the coverage report in the default browser
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    xdg-open /tmp/coverage.html
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    open /tmp/coverage.html
+elif [[ "$OSTYPE" == "cygwin" || "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+    start /tmp/coverage.html
+else
+    echo "Unable to automatically open the browser. Please open coverage.html manually."
+fi

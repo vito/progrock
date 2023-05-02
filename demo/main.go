@@ -4,75 +4,130 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
-	"github.com/vito/progrock/ui"
 )
 
+func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...string) {
+	cmdline := strings.Join(append([]string{exe}, args...), " ")
+
+	okVtx := rec.Vertex(
+		digest.FromString(fmt.Sprintf("%d", time.Now().UnixNano())),
+		cmdline,
+	)
+
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Stdout = okVtx.Stdout()
+	cmd.Stderr = okVtx.Stderr()
+	okVtx.Done(cmd.Run())
+}
+
 func main() {
-	r, w := progrock.Pipe()
-	rec := progrock.NewRecorder(w)
+	casette := progrock.NewCasette()
+	rec := progrock.NewRecorder(casette)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rec.Display(cancel, ui.Default, os.Stderr, r, true)
-	defer rec.Stop()
+	stop := progrock.DefaultUI().RenderLoop(cancel, casette, os.Stderr, true)
+	defer stop()
 
-	failed := rec.Vertex("failed vertex", "failed vertex")
-	failed.Task("finished task").Complete()
-	fmt.Fprintln(failed.Stderr(), "some failed vertex logs")
-	fmt.Fprintln(failed.Stderr(), "some more failed vertex logs")
-	fmt.Fprintln(failed.Stderr(), "even more failed vertex logs")
-	failed.Done(fmt.Errorf("bam"))
+	failedVtx := rec.Vertex("failed", "failed task in vertex")
+	// failedVtx.Task("errored task")
+	fmt.Fprintln(failedVtx.Stderr(), "some failed task logs")
+	failedVtx.Done(fmt.Errorf("oh noes"))
 
-	failedTask := rec.Vertex("failed", "failed task in vertex")
-	failedTask.Task("errored task")
-	fmt.Fprintln(failedTask.Stderr(), "some failed task logs")
-	fmt.Fprintln(failedTask.Stderr(), "some more failed task logs")
-	failedTask.Done(fmt.Errorf("oh noes"))
+	cmdVtx(ctx, rec, "ls", "-al")
+	cmdVtx(ctx, rec, "sh", "-c", "echo imma fail && echo any moment now && exit 1")
 
 	wg := new(sync.WaitGroup)
 
-	for v := 0; v < 3; v++ {
+dance:
+	for v := 0; v < 10; v++ {
 		v := v
 
-		succeeds := rec.Vertex(
+		group := rec.WithGroup(fmt.Sprintf("group %d", v))
+
+		succeeds := group.Vertex(
 			digest.Digest(fmt.Sprintf("log-and-count-%d", v)),
 			fmt.Sprintf("count and log: #%d", v+1),
 		)
 
+		fmt.Fprintf(succeeds.Stdout(), "group: %s\n", group.Group.Id)
+
 		count := succeeds.Task("counting task")
 		count.Start()
 
+		prog := succeeds.ProgressTask(42, "barring task")
+		prog.Start()
 		wg.Add(1)
 		go func() {
+			defer wg.Done()
+			defer prog.Done(nil)
+			for i := int64(0); i <= prog.Task.Total; i++ {
+				select {
+				case <-time.After(100 * time.Millisecond):
+				case <-ctx.Done():
+					return
+				}
+
+				prog.Current(i)
+			}
+		}()
+
+		subVtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
+
+		multiGroup := group.Vertex(
+			digest.Digest(fmt.Sprintf("log-and-count-%d", v%2)),
+			fmt.Sprintf("count and log: %d", v%2),
+		)
+
+		wg.Add(1)
+		go func() {
+			defer cancel()
 			defer wg.Done()
 
 			time.Sleep(500 * time.Millisecond)
 
-			for i := int64(0); ctx.Err() == nil; i++ {
-				fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
-				fmt.Fprintf(succeeds.Stderr(), "stderr %d\n", i)
+			for i := int64(0); subVtx.Err() == nil; i++ {
+				if i%2 == 0 {
+					fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
+				} else {
+					fmt.Fprintf(succeeds.Stderr(), "stderr %d\n", i)
+				}
 
 				select {
 				case <-time.After(500 * time.Millisecond):
-				case <-ctx.Done():
+				case <-subVtx.Done():
 				}
 			}
 
-			fmt.Fprintln(succeeds.Stdout(), "done")
-			fmt.Fprintln(succeeds.Stderr(), "done")
+			fmt.Fprintln(succeeds.Stdout(), "stdout done")
+			fmt.Fprintln(succeeds.Stderr(), "stderr done")
 			count.Complete()
 
 			succeeds.Complete()
+			multiGroup.Complete()
 		}()
+
+		if v%2 == 0 {
+			subGroup := group.WithGroup(fmt.Sprintf("sub-group %d", v))
+			go cmdVtx(subVtx, subGroup, "sh", "-c", "echo hello")
+		}
+
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			break dance
+		}
 	}
 
 	wg.Wait()
 
-	w.Close()
+	rec.Close()
 }

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -21,6 +20,13 @@ import (
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
 )
+
+type Spinner interface {
+	tea.Model
+
+	ViewFancy() string
+	ViewFrame(Frames) (string, time.Time, int)
+}
 
 type Rave struct {
 	// Show extra details useful for debugging a desynced rave.
@@ -36,7 +42,7 @@ type Rave struct {
 	SpotifyTokenPath string
 
 	// The animation to display.
-	Frames [FramesPerBeat]string
+	Frames Frames
 
 	// transmits an authenticated Spotify client during the auth callback flow
 	spotifyAuthState    string
@@ -57,6 +63,8 @@ type Rave struct {
 	pos int
 }
 
+var _ Spinner = &Rave{}
+
 var colors = []termenv.Color{
 	termenv.ANSIRed,
 	termenv.ANSIGreen,
@@ -72,6 +80,9 @@ const DefaultBPM = 123
 // FramesPerBeat determines the granularity that the spinner's animation timing
 // for each beat, i.e. 10 for tenths of a second.
 const FramesPerBeat = 10
+
+// Frames contains animation frames.
+type Frames [FramesPerBeat]string
 
 var MeterFrames = [FramesPerBeat]string{
 	0: "█",
@@ -131,7 +142,7 @@ func (rave *Rave) Init() tea.Cmd {
 	ctx := context.TODO()
 
 	cmds := []tea.Cmd{
-		tick(rave.fps),
+		Frame(rave.fps),
 		rave.setFPS(DefaultBPM),
 		func() tea.Msg {
 			client, err := rave.existingAuth(ctx)
@@ -233,28 +244,28 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// NB: these might be hit at an upper layer instead; in which case it will
 	// *not* propagate.
-	case tickMsg:
-		return rave, tick(rave.fps)
-	case setFpsMsg:
+	case FrameMsg:
+		return rave, Frame(rave.fps)
+	case SetFPSMsg:
 		rave.fps = float64(msg)
 		return rave, nil
 
 	// NB: these are captured and forwarded at the outer level.
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, keys.Rave):
+		case key.Matches(msg, Keys.Rave):
 			return rave, rave.Sync()
-		case key.Matches(msg, keys.EndRave):
+		case key.Matches(msg, Keys.EndRave):
 			return rave, rave.Desync()
-		case key.Matches(msg, keys.ForwardRave):
+		case key.Matches(msg, Keys.ForwardRave):
 			rave.start = rave.start.Add(-100 * time.Millisecond)
 			rave.pos = 0 // reset and recalculate
 			return rave, nil
-		case key.Matches(msg, keys.BackwardRave):
+		case key.Matches(msg, Keys.BackwardRave):
 			rave.start = rave.start.Add(100 * time.Millisecond)
 			rave.pos = 0 // reset and recalculate
 			return rave, nil
-		case key.Matches(msg, keys.Debug):
+		case key.Matches(msg, Keys.Debug):
 			rave.ShowDetails = !rave.ShowDetails
 			return rave, nil
 		}
@@ -272,16 +283,32 @@ func (rave *Rave) setFPS(bpm float64) tea.Cmd {
 	fps *= 3 // decrease chance of missing a frame due to timing
 	rave.fps = fps
 	return tea.Cmd(func() tea.Msg {
-		return setFpsMsg(fps)
+		return SetFPSMsg(fps)
 	})
 }
 
 func (rave *Rave) View() string {
+	frame, _, _ := rave.ViewFrame(rave.Frames)
+	return frame
+}
+
+func (rave *Rave) ViewFancy() string {
+	frame, now, pos := rave.ViewFrame(rave.Frames)
+	if rave.ShowDetails {
+		frame += " " + rave.viewDetails(now, pos)
+	}
+
+	if rave.track != nil && pos != -1 {
+		frame = termenv.String(frame).Foreground(colors[pos%len(colors)]).String()
+	}
+
+	return frame
+}
+
+func (rave *Rave) ViewFrame(frames Frames) (string, time.Time, int) {
 	now := time.Now()
 
 	pos, pct := rave.Progress(now)
-
-	var out string
 
 	frame := int(ease.InOutCubic(pct) * 10)
 
@@ -293,19 +320,7 @@ func (rave *Rave) View() string {
 		frame = FramesPerBeat - 1
 	}
 
-	out += rave.Frames[frame]
-
-	out = strings.Repeat(out, 2)
-
-	if rave.ShowDetails {
-		out += " " + rave.viewDetails(now, pos)
-	}
-
-	if rave.track != nil && pos != -1 {
-		out = termenv.String(out).Foreground(colors[pos%len(colors)]).String()
-	}
-
-	return out
+	return frames[frame], now, pos
 }
 
 func (model *Rave) viewDetails(now time.Time, pos int) string {
@@ -523,4 +538,14 @@ func b64rand(bytes int) (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+type FrameMsg time.Time
+
+type SetFPSMsg float64
+
+func Frame(fps float64) tea.Cmd {
+	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
+		return FrameMsg(t)
+	})
 }
