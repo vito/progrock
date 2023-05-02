@@ -21,6 +21,10 @@ type Casette struct {
 
 	width, height int
 
+	// show edges between vertexes in the same group
+	verboseEdges bool
+
+	// show internal vertexes
 	showInternal bool
 
 	debug *ui.Vterm
@@ -146,6 +150,12 @@ func (casette *Casette) Close() error {
 	return nil
 }
 
+func (casette *Casette) VerboseEdges(verbose bool) {
+	casette.l.Lock()
+	defer casette.l.Unlock()
+	casette.verboseEdges = verbose
+}
+
 func (casette *Casette) ShowInternal(show bool) {
 	casette.l.Lock()
 	defer casette.l.Unlock()
@@ -239,19 +249,9 @@ func (casette *Casette) Render(w io.Writer, u *UI) error {
 		activeExceptCurrent := active[1:]
 
 		var haveInput []*Vertex
-		var siblings int
 		for _, a := range activeExceptCurrent {
-			if a.IsSibling(vtx) {
-				siblings++
-				// NB: avoid dealing with siblings entirely; having lines go out and
-				// back in to later vertexes in the same group seems more confusing
-				// than actually helpful. maybe show this at a higher debug level?
-				continue
-			}
-
-			if a.HasInput(vtx) && siblings > 1 {
-				// avoid forking if the immediate next vertex has an input, i.e.
-				// chained commands
+			if a.HasInput(vtx) && (!a.IsSibling(vtx) || casette.verboseEdges) {
+				// avoid forking for vertexes in the same group; often more noisy than helpful
 				haveInput = append(haveInput, a)
 			}
 		}
@@ -725,39 +725,38 @@ func (groups Groups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, ch string) {
 }
 
 func (groups Groups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
-	for i, g := range groups {
-		if g == nil {
-			fmt.Fprint(w, " ")
-		} else if g.DirectlyContains(vtx) {
-			fmt.Fprint(w, groupColor(i, taskSymbol))
-		} else {
-			fmt.Fprint(w, groupColor(i, inactiveGroupSymbol))
+	groups.printPrefix(w, func(g progressGroup, vtx *Vertex) string {
+		if g.DirectlyContains(vtx) {
+			return taskSymbol
 		}
-		fmt.Fprint(w, " ")
-	}
+		return inactiveGroupSymbol
+	}, vtx)
 }
 
 func (groups Groups) GroupPrefix(w io.Writer, u *UI, group progressGroup) {
-	for i, g := range groups {
-		if g == nil {
-			fmt.Fprint(w, " ")
-		} else if group.ID() == g.ID() {
-			fmt.Fprint(w, groupColor(i, dCaret))
-		} else {
-			fmt.Fprint(w, groupColor(i, inactiveGroupSymbol))
+	groups.printPrefix(w, func(g progressGroup, _ *Vertex) string {
+		if group.ID() == g.ID() {
+			return dCaret
 		}
-		fmt.Fprint(w, " ")
-	}
+		return inactiveGroupSymbol
+	}, nil)
 }
 
 func (groups Groups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
+	groups.printPrefix(w, func(g progressGroup, vtx *Vertex) string {
+		if g.DirectlyContains(vtx) {
+			return vbBar
+		}
+		return inactiveGroupSymbol
+	}, vtx)
+}
+
+func (groups Groups) printPrefix(w io.Writer, sym func(progressGroup, *Vertex) string, vtx *Vertex) {
 	for i, g := range groups {
 		if g == nil {
 			fmt.Fprint(w, " ")
-		} else if g.DirectlyContains(vtx) {
-			fmt.Fprint(w, groupColor(i, vbBar))
 		} else {
-			fmt.Fprint(w, groupColor(i, inactiveGroupSymbol))
+			fmt.Fprint(w, groupColor(i, sym(g, vtx)))
 		}
 		fmt.Fprint(w, " ")
 	}
