@@ -6,24 +6,30 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (v *Vertex) IsInGroup(g *Group) bool {
-	for _, id := range v.Groups {
-		if id == g.Id {
-			return true
-		}
+// VertexInstance identifies a vertex at a specific point in time.
+type VertexInstance struct {
+	VertexId string
+	GroupId  string
+}
+
+func (v *Vertex) Instance() VertexInstance {
+	return VertexInstance{
+		VertexId: v.Id,
+		GroupId:  v.GetGroup(),
 	}
-	return false
+}
+
+func (v *Vertex) IsInGroup(g *Group) bool {
+	return v.GetGroup() == g.Id
 }
 
 func (v *Vertex) IsInGroupOrParent(g *Group, allGroups map[string]*Group) bool {
-	for _, id := range v.Groups {
-		if id == g.Id {
+	if v.GetGroup() == g.Id {
+		return true
+	}
+	for vg := v.GetGroup(); vg != ""; vg = allGroups[vg].GetParent() {
+		if vg == g.Id {
 			return true
-		}
-		for vg := id; vg != ""; vg = allGroups[vg].GetParent() {
-			if vg == g.Id {
-				return true
-			}
 		}
 	}
 	return false
@@ -49,14 +55,7 @@ func (v *Vertex) HasInput(o *Vertex) bool {
 }
 
 func (v *Vertex) IsSibling(o *Vertex) bool {
-	for _, id := range v.Groups {
-		for _, oid := range o.Groups {
-			if id == oid {
-				return true
-			}
-		}
-	}
-	return false
+	return v.GetGroup() == o.GetGroup()
 }
 
 func (vertex *Vertex) Duration() time.Duration {

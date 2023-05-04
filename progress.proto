@@ -73,8 +73,8 @@ message Vertex {
   // Internal indicates that the vertex should not visible to the user by
   // default, but may be revealed with a flag.
   bool internal = 10;
-  // Group lists IDs of groups that contain this vertex.
-  repeated string groups = 11;
+  // Group is the ID of a group that the vertex belongs to.
+  optional string group = 11;
 }
 
 // VertexTask is a task that a vertex is performing.

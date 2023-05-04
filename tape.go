@@ -13,9 +13,9 @@ import (
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
 type Tape struct {
-	order    []string
+	order    []VertexInstance
 	groups   map[string]*Group
-	vertexes map[string]*Vertex
+	vertexes map[VertexInstance]*Vertex
 	tasks    map[string][]*VertexTask
 	logs     map[string]*ui.Vterm
 	done     bool
@@ -67,7 +67,7 @@ const (
 func NewTape() *Tape {
 	return &Tape{
 		groups:   make(map[string]*Group),
-		vertexes: make(map[string]*Vertex),
+		vertexes: make(map[VertexInstance]*Vertex),
 		tasks:    make(map[string][]*VertexTask),
 		logs:     make(map[string]*ui.Vterm),
 
@@ -92,14 +92,21 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	}
 
 	for _, v := range status.Vertexes {
-		existing, found := tape.vertexes[v.Id]
+		ival := v.Instance()
+		existing, found := tape.vertexes[ival]
 		if !found {
-			tape.insert(v)
+			tape.insert(ival, v)
 		} else if existing.Completed != nil && v.Cached {
 			// don't clobber the "real" vertex with a cache
 			// TODO: count cache hits?
 		} else {
-			tape.vertexes[v.Id] = v
+			tape.vertexes[ival] = v
+		}
+
+		if v.Group != nil {
+			if _, found := tape.groups[v.GetGroup()]; !found {
+				fmt.Fprintln(tape.debug, "[write] vertex", v.Id, "refers to unknown group:", v.GetGroup())
+			}
 		}
 	}
 
@@ -203,7 +210,6 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	var completed []*Vertex
 	var runningAndFailed []*Vertex
 
-	runningByGroup := map[string]int{}
 	for _, dig := range tape.order {
 		vtx := tape.vertexes[dig]
 
@@ -211,12 +217,6 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			runningAndFailed = append(runningAndFailed, vtx)
 		} else {
 			completed = append(completed, vtx)
-		}
-
-		for _, id := range vtx.Groups {
-			if vtx.Completed == nil {
-				runningByGroup[id]++
-			}
 		}
 	}
 
@@ -237,12 +237,13 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 		groups = groups.Reap(w, u, tape.groups, order[i:])
 
-		for _, id := range vtx.Groups {
+		if vtx.Group != nil {
+			id := vtx.GetGroup()
 			group := tape.groups[id]
 			if group == nil {
-				fmt.Fprintln(tape.debug, "group is nil:", id)
+				fmt.Fprintln(tape.debug, "[render] vertex", vtx.Id, "refers to unknown group:", id)
 			} else {
-				groups = groups.AddGroup(w, u, tape.groups, group)
+				groups = groups.AddGroup(w, u, tape.groups, group, tape.debug)
 			}
 		}
 
@@ -251,7 +252,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
 
-		groups.VertexPrefix(w, u, vtx, symbol)
+		groups.VertexPrefix(w, u, vtx, symbol, tape.debug)
 		if err := u.RenderVertex(w, vtx); err != nil {
 			return err
 		}
@@ -313,27 +314,27 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) insert(vtx *Vertex) {
+func (tape *Tape) insert(ival VertexInstance, vtx *Vertex) {
 	if vtx.Started == nil {
 		// skip pending vertices; too complicated to deal with
 		return
 	}
 
-	tape.vertexes[vtx.Id] = vtx
+	tape.vertexes[ival] = vtx
 
 	for i, dig := range tape.order {
 		other := tape.vertexes[dig]
 		if other.Started.AsTime().After(vtx.Started.AsTime()) {
-			inserted := make([]string, len(tape.order)+1)
+			inserted := make([]VertexInstance, len(tape.order)+1)
 			copy(inserted, tape.order[:i])
-			inserted[i] = vtx.Id
+			inserted[i] = ival
 			copy(inserted[i+1:], tape.order[i:])
 			tape.order = inserted
 			return
 		}
 	}
 
-	tape.order = append(tape.order, vtx.Id)
+	tape.order = append(tape.order, ival)
 }
 
 func (tape *Tape) termHeight() int {
@@ -371,12 +372,12 @@ func (gg progGroup) ID() string {
 
 func (gg progGroup) DirectlyContains(vtx *Vertex) bool {
 	return vtx.IsInGroup(gg.Group) ||
-		len(vtx.Groups) == 0 && gg.Name == RootGroup
+		vtx.Group == nil && gg.Name == RootGroup
 }
 
 func (gg progGroup) IsActiveVia(vtx *Vertex, allGroups map[string]*Group) bool {
 	return vtx.IsInGroupOrParent(gg.Group, allGroups) ||
-		len(vtx.Groups) == 0 && gg.Name == RootGroup
+		vtx.Group == nil && gg.Name == RootGroup
 }
 
 func (gg progGroup) Created(vtx *Vertex) bool {
@@ -425,7 +426,7 @@ func (vg vertexGroup) WitnessedAll() bool {
 }
 
 // AddVertex adds a group to the set of groups. It also renders the new groups.
-func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, group *Group) progressGroups {
+func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, group *Group, debug io.Writer) progressGroups {
 	pg := progGroup{group}
 
 	if len(groups) == 0 && group.Name == RootGroup {
@@ -445,10 +446,15 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*
 		}
 	}
 
-	if parentIdx == -1 {
-		parent := allGroups[group.GetParent()]
-		groups = groups.AddGroup(w, u, allGroups, parent)
-		return groups.AddGroup(w, u, allGroups, group)
+	if parentIdx == -1 && group.Parent != nil {
+		parent, found := allGroups[group.GetParent()]
+		if !found {
+			fmt.Fprintln(debug, "group", group.Id, "has unknown parent:", group.GetParent())
+			return groups
+		}
+
+		return groups.AddGroup(w, u, allGroups, parent, debug).
+			AddGroup(w, u, allGroups, group, debug)
 	}
 
 	var added bool
@@ -607,7 +613,7 @@ func (groups progressGroups) AddVertex(w io.Writer, u *UI, allGroups map[string]
 }
 
 // VertexPrefix prints the prefix for a vertex.
-func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string) {
+func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string, debug io.Writer) {
 	var firstParentIdx = -1
 	var lastParentIdx = -1
 	var vtxIdx = -1
@@ -629,7 +635,7 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 	}
 
 	if vtxIdx == -1 {
-		panic("impossible? vertex has no group")
+		fmt.Fprintln(debug, "vertex", vtx.Id, "has no containing group:", vtx.GetGroup())
 	}
 
 	for i, g := range groups {

@@ -52,7 +52,7 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 		Id:      dig.String(),
 		Name:    name,
 		Started: timestamppb.New(now),
-		Groups:  []string{recorder.Group.Id},
+		Group:   &recorder.Group.Id,
 	}
 
 	for _, o := range opts {

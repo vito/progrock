@@ -21,9 +21,6 @@ type Recorder struct {
 
 	groups  map[string]*Recorder
 	groupsL sync.Mutex
-
-	// contains sub-groups
-	vertexGroups *vertexGroups
 }
 
 // RootGroup is the name of the toplevel group, which is blank.
@@ -42,9 +39,8 @@ func NewRecorder(w Writer, labels ...*Label) *Recorder {
 
 func newEmptyRecorder(w Writer) *Recorder {
 	return &Recorder{
-		w:            w,
-		groups:       map[string]*Recorder{},
-		vertexGroups: newVertexGroups(),
+		w:      w,
+		groups: map[string]*Recorder{},
 	}
 }
 
@@ -52,15 +48,7 @@ func newEmptyRecorder(w Writer) *Recorder {
 func (recorder *Recorder) Record(status *StatusUpdate) error {
 	// perform a deep-copy so buffered writes don't get mutated, similar to
 	// copying in Write([]byte) when []byte comes from sync.Pool
-	update := proto.Clone(status).(*StatusUpdate)
-
-	for _, vertex := range update.Vertexes {
-		id := digest.Digest(vertex.Id)
-		recorder.vertexGroups.Add(id, vertex.Groups...)
-		vertex.Groups = recorder.vertexGroups.Groups(id, recorder.Group.Id)
-	}
-
-	return recorder.w.WriteStatus(update)
+	return recorder.w.WriteStatus(proto.Clone(status).(*StatusUpdate))
 }
 
 // WithGroup creates a new group with the given name and labels and sends a
@@ -95,8 +83,6 @@ func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
 
 	subRecorder := newEmptyRecorder(recorder.w)
 	subRecorder.Group = g
-	// vertex groups are global across all subgroups of the root recorder
-	subRecorder.vertexGroups = recorder.vertexGroups
 	subRecorder.sync()
 
 	recorder.groups[name] = subRecorder
