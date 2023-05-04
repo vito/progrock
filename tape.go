@@ -664,7 +664,11 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 				}
 			} else if g.Created(vtx) {
 				if g.WitnessedAll() {
-					symbol = blCorner
+					if i == firstParentIdx {
+						symbol = blCorner
+					} else {
+						symbol = htBar
+					}
 				} else {
 					symbol = vrBar
 				}
