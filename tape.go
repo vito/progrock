@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 
 	"github.com/muesli/termenv"
@@ -13,12 +14,14 @@ import (
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
 type Tape struct {
-	order    []VertexInstance
-	groups   map[string]*Group
-	vertexes map[VertexInstance]*Vertex
-	tasks    map[string][]*VertexTask
-	logs     map[string]*ui.Vterm
-	done     bool
+	order          []string
+	vertexes       map[string]*Vertex
+	groups         map[string]*Group
+	group2vertexes map[string]map[string]struct{}
+	vertex2groups  map[string]map[string]struct{}
+	tasks          map[string][]*VertexTask
+	logs           map[string]*ui.Vterm
+	done           bool
 
 	width, height int
 
@@ -66,10 +69,12 @@ const (
 // NewTape returns a new Tape.
 func NewTape() *Tape {
 	return &Tape{
-		groups:   make(map[string]*Group),
-		vertexes: make(map[VertexInstance]*Vertex),
-		tasks:    make(map[string][]*VertexTask),
-		logs:     make(map[string]*ui.Vterm),
+		vertexes:       make(map[string]*Vertex),
+		groups:         make(map[string]*Group),
+		group2vertexes: make(map[string]map[string]struct{}),
+		vertex2groups:  make(map[string]map[string]struct{}),
+		tasks:          make(map[string][]*VertexTask),
+		logs:           make(map[string]*ui.Vterm),
 
 		// sane defaults before size is received
 		width:  80,
@@ -92,21 +97,14 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	}
 
 	for _, v := range status.Vertexes {
-		ival := v.Instance()
-		existing, found := tape.vertexes[ival]
+		existing, found := tape.vertexes[v.Id]
 		if !found {
-			tape.insert(ival, v)
+			tape.insert(v.Id, v)
 		} else if existing.Completed != nil && v.Cached {
 			// don't clobber the "real" vertex with a cache
 			// TODO: count cache hits?
 		} else {
-			tape.vertexes[ival] = v
-		}
-
-		if v.Group != nil {
-			if _, found := tape.groups[v.GetGroup()]; !found {
-				fmt.Fprintln(tape.debug, "[write] vertex", v.Id, "refers to unknown group:", v.GetGroup())
-			}
+			tape.vertexes[v.Id] = v
 		}
 	}
 
@@ -130,6 +128,26 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		_, err := sink.Write(l.Data)
 		if err != nil {
 			return fmt.Errorf("write logs: %w", err)
+		}
+	}
+
+	for _, ms := range status.Memberships {
+		members, found := tape.group2vertexes[ms.Group]
+		if !found {
+			members = make(map[string]struct{})
+			tape.group2vertexes[ms.Group] = members
+		}
+
+		for _, vtxId := range ms.Vertexes {
+			members[vtxId] = struct{}{}
+
+			groups, found := tape.vertex2groups[vtxId]
+			if !found {
+				groups = make(map[string]struct{})
+				tape.vertex2groups[vtxId] = groups
+			}
+
+			groups[ms.Group] = struct{}{}
 		}
 	}
 
@@ -207,6 +225,12 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
+	b := &bouncer{
+		groups:         tape.groups,
+		group2vertexes: tape.group2vertexes,
+		vertex2groups:  tape.vertex2groups,
+	}
+
 	var completed []*Vertex
 	var runningAndFailed []*Vertex
 
@@ -235,16 +259,10 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			continue
 		}
 
-		groups = groups.Reap(w, u, tape.groups, order[i:])
+		groups = groups.Reap(w, u, order[i:])
 
-		if vtx.Group != nil {
-			id := vtx.GetGroup()
-			group := tape.groups[id]
-			if group == nil {
-				fmt.Fprintln(tape.debug, "[render] vertex", vtx.Id, "refers to unknown group:", id)
-			} else {
-				groups = groups.AddGroup(w, u, tape.groups, group, tape.debug)
-			}
+		for _, g := range b.Groups(vtx) {
+			groups = groups.AddGroup(w, u, b, g, tape.debug)
 		}
 
 		symbol := block
@@ -269,7 +287,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 		var haveInput []*Vertex
 		for _, a := range activeExceptCurrent {
-			if a.HasInput(vtx) && (!a.IsSibling(vtx) || tape.verboseEdges) {
+			if a.HasInput(vtx) && (!b.IsSibling(a, vtx) || tape.verboseEdges) {
 				// avoid forking for vertexes in the same group; often more noisy than helpful
 				haveInput = append(haveInput, a)
 			}
@@ -306,7 +324,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 		}
 	}
 
-	groups.Reap(w, u, tape.groups, nil)
+	groups.Reap(w, u, nil)
 
 	tape.debug.SetHeight(10)
 	fmt.Fprint(w, tape.debug.View())
@@ -314,27 +332,27 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) insert(ival VertexInstance, vtx *Vertex) {
+func (tape *Tape) insert(id string, vtx *Vertex) {
 	if vtx.Started == nil {
 		// skip pending vertices; too complicated to deal with
 		return
 	}
 
-	tape.vertexes[ival] = vtx
+	tape.vertexes[id] = vtx
 
 	for i, dig := range tape.order {
 		other := tape.vertexes[dig]
 		if other.Started.AsTime().After(vtx.Started.AsTime()) {
-			inserted := make([]VertexInstance, len(tape.order)+1)
+			inserted := make([]string, len(tape.order)+1)
 			copy(inserted, tape.order[:i])
-			inserted[i] = ival
+			inserted[i] = id
 			copy(inserted[i+1:], tape.order[i:])
 			tape.order = inserted
 			return
 		}
 	}
 
-	tape.order = append(tape.order, ival)
+	tape.order = append(tape.order, id)
 }
 
 func (tape *Tape) termHeight() int {
@@ -351,12 +369,104 @@ func (tape *Tape) vertexLogs(vertex string) *ui.Vterm {
 	return term
 }
 
+type bouncer struct {
+	groups         map[string]*Group
+	group2vertexes map[string]map[string]struct{}
+	vertex2groups  map[string]map[string]struct{}
+}
+
+func (b *bouncer) Groups(vtx *Vertex) []*Group {
+	groups := make([]*Group, 0, len(b.vertex2groups[vtx.Id]))
+	for id := range b.vertex2groups[vtx.Id] {
+		group, found := b.groups[id]
+		if found {
+			groups = append(groups, group)
+		}
+	}
+
+	// TODO this is in the hot path, would be better to maintain order instead of
+	// sorting
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].Started.AsTime().Before(groups[j].Started.AsTime())
+	})
+
+	return groups
+}
+
+func (b *bouncer) Parent(group *Group) (*Group, bool) {
+	if group.Parent == nil {
+		return nil, false
+	}
+
+	parent, found := b.groups[group.GetParent()]
+	return parent, found
+}
+
+func (b *bouncer) IsInGroup(vtx *Vertex, group *Group) bool {
+	groups := b.vertex2groups[vtx.Id]
+	if len(groups) == 0 {
+		// vertex is not in any group; default it to the root group
+		return group.Name == RootGroup
+	}
+
+	_, found := groups[group.Id]
+	return found
+}
+
+func (b *bouncer) IsSubGroup(child, needle *Group) bool {
+	for parent, found := b.Parent(child); found; parent, found = b.Parent(parent) {
+		if parent.Id == needle.Id {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *bouncer) IsInGroupOrChild(vtx *Vertex, group *Group) bool {
+	if b.IsInGroup(vtx, group) {
+		return true
+	}
+
+	for groupId := range b.vertex2groups[vtx.Id] {
+		g, found := b.groups[groupId]
+		if !found {
+			continue
+		}
+
+		if b.IsSubGroup(g, group) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (b *bouncer) IsSibling(x, y *Vertex) bool {
+	groupsA, found := b.vertex2groups[x.Id]
+	if !found {
+		return false
+	}
+
+	groupsB, found := b.vertex2groups[y.Id]
+	if !found {
+		return false
+	}
+
+	for id := range groupsA {
+		if _, found := groupsB[id]; found {
+			return true
+		}
+	}
+
+	return false
+}
+
 type progressGroups []progressGroup
 
 type progressGroup interface {
 	ID() string
 	DirectlyContains(*Vertex) bool
-	IsActiveVia(*Vertex, map[string]*Group) bool
+	IsActiveVia(*Vertex) bool
 	Created(*Vertex) bool
 	Witness(*Vertex)
 	WitnessedAll() bool
@@ -364,6 +474,8 @@ type progressGroup interface {
 
 type progGroup struct {
 	*Group
+
+	bouncer *bouncer
 }
 
 func (gg progGroup) ID() string {
@@ -371,13 +483,11 @@ func (gg progGroup) ID() string {
 }
 
 func (gg progGroup) DirectlyContains(vtx *Vertex) bool {
-	return vtx.IsInGroup(gg.Group) ||
-		vtx.Group == nil && gg.Name == RootGroup
+	return gg.bouncer.IsInGroup(vtx, gg.Group)
 }
 
-func (gg progGroup) IsActiveVia(vtx *Vertex, allGroups map[string]*Group) bool {
-	return vtx.IsInGroupOrParent(gg.Group, allGroups) ||
-		vtx.Group == nil && gg.Name == RootGroup
+func (gg progGroup) IsActiveVia(vtx *Vertex) bool {
+	return gg.bouncer.IsInGroupOrChild(vtx, gg.Group)
 }
 
 func (gg progGroup) Created(vtx *Vertex) bool {
@@ -405,7 +515,7 @@ func (vg vertexGroup) DirectlyContains(vtx *Vertex) bool {
 	return false
 }
 
-func (vg vertexGroup) IsActiveVia(other *Vertex, allGroups map[string]*Group) bool {
+func (vg vertexGroup) IsActiveVia(other *Vertex) bool {
 	return other.HasInput(vg.Vertex)
 }
 
@@ -426,8 +536,8 @@ func (vg vertexGroup) WitnessedAll() bool {
 }
 
 // AddVertex adds a group to the set of groups. It also renders the new groups.
-func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*Group, group *Group, debug io.Writer) progressGroups {
-	pg := progGroup{group}
+func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Group, debug io.Writer) progressGroups {
+	pg := progGroup{group, b}
 
 	if len(groups) == 0 && group.Name == RootGroup {
 		return progressGroups{pg}
@@ -439,6 +549,7 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*
 			continue
 		}
 		if g.ID() == group.Id {
+			// group already present
 			return groups
 		}
 		if g.ID() == group.GetParent() {
@@ -447,14 +558,14 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, allGroups map[string]*
 	}
 
 	if parentIdx == -1 && group.Parent != nil {
-		parent, found := allGroups[group.GetParent()]
+		parent, found := b.Parent(group)
 		if !found {
 			fmt.Fprintln(debug, "group", group.Id, "has unknown parent:", group.GetParent())
 			return groups
 		}
 
-		return groups.AddGroup(w, u, allGroups, parent, debug).
-			AddGroup(w, u, allGroups, group, debug)
+		return groups.AddGroup(w, u, b, parent, debug).
+			AddGroup(w, u, b, group, debug)
 	}
 
 	var added bool
@@ -635,7 +746,7 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 	}
 
 	if vtxIdx == -1 {
-		fmt.Fprintln(debug, "vertex", vtx.Id, "has no containing group:", vtx.GetGroup())
+		fmt.Fprintln(debug, "vertex", vtx.Id, "has no containing group?")
 	}
 
 	for i, g := range groups {
@@ -739,7 +850,7 @@ func (groups progressGroups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 }
 
 // Reap removes groups that are no longer active.
-func (groups progressGroups) Reap(w io.Writer, u *UI, allGroups map[string]*Group, active []*Vertex) progressGroups {
+func (groups progressGroups) Reap(w io.Writer, u *UI, active []*Vertex) progressGroups {
 	reaped := map[int]bool{}
 	for i, g := range groups {
 		if g == nil {
@@ -748,8 +859,9 @@ func (groups progressGroups) Reap(w io.Writer, u *UI, allGroups map[string]*Grou
 
 		var isActive bool
 		for _, vtx := range active {
-			if g.IsActiveVia(vtx, allGroups) {
+			if g.IsActiveVia(vtx) {
 				isActive = true
+				break
 			}
 		}
 

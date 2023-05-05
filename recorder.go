@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/opencontainers/go-digest"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -87,6 +88,24 @@ func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
 	recorder.groups[name] = subRecorder
 
 	return subRecorder
+}
+
+// Join sends a progress update that the given vertexes are members of the
+// current group.
+func (recorder *Recorder) Join(vertexes ...digest.Digest) {
+	strs := make([]string, len(vertexes))
+	for i, v := range vertexes {
+		strs[i] = v.String()
+	}
+
+	recorder.Record(&StatusUpdate{
+		Memberships: []*Membership{
+			{
+				Group:    recorder.Group.Id,
+				Vertexes: strs,
+			},
+		},
+	})
 }
 
 // Complete marks the current group and all sub-groups as complete, and sends a
