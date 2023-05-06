@@ -139,15 +139,17 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		}
 
 		for _, vtxId := range ms.Vertexes {
-			members[vtxId] = struct{}{}
-
 			groups, found := tape.vertex2groups[vtxId]
 			if !found {
 				groups = make(map[string]struct{})
 				tape.vertex2groups[vtxId] = groups
 			}
 
-			groups[ms.Group] = struct{}{}
+			if len(groups) == 0 {
+				// only place vertexes in their first group
+				members[vtxId] = struct{}{}
+				groups[ms.Group] = struct{}{}
+			}
 		}
 	}
 
@@ -746,7 +748,7 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 	}
 
 	if vtxIdx == -1 {
-		fmt.Fprintln(debug, "vertex", vtx.Id, "has no containing group?")
+		fmt.Fprintln(debug, "vertex has no containing group?", vtx)
 	}
 
 	for i, g := range groups {
