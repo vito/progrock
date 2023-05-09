@@ -7,14 +7,24 @@ import "google/protobuf/timestamp.proto";
 
 // StatusUpdate contains a snapshot of state updates for the graph.
 message StatusUpdate {
-  // Vertexes contains the set of updated vertexes.
+  // Vertexes contains the set of vertex updates.
   repeated Vertex vertexes = 1;
-  // Tasks contains the set of updated tasks.
+  // Tasks contains the set of tasks updates.
   repeated VertexTask tasks = 2;
   // Logs contains the set of new log output.
   repeated VertexLog logs = 3;
-  // Groups contains a set of updated groups.
+  // Groups contains a set of groups updates.
   repeated Group groups = 4;
+  // Memberships contains a set of membership updates.
+  repeated Membership memberships = 5;
+};
+
+// Membership declares a set of vertexes to be members of a group.
+message Membership {
+  // Group is the ID of the group.
+  string group = 1;
+  // Vertexes is the set of vertex IDs that are members of the group.
+  repeated string vertexes = 2;
 };
 
 // Group is used to group related vertexes.
@@ -73,8 +83,6 @@ message Vertex {
   // Internal indicates that the vertex should not visible to the user by
   // default, but may be revealed with a flag.
   bool internal = 10;
-  // Group is the ID of a group that the vertex belongs to.
-  optional string group = 11;
 }
 
 // VertexTask is a task that a vertex is performing.
@@ -106,7 +114,10 @@ message VertexLog {
   google.protobuf.Timestamp timestamp = 4;
 }
 
+// LogStream is the standard stream that a log message was emitted to.
 enum LogStream {
-  STDOUT = 0;
-  STDERR = 1;
+  // STDOUT is /dev/stdout.
+  STDOUT = 1;
+  // STDOUT is /dev/stderr.
+  STDERR = 2;
 }

@@ -52,7 +52,6 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 		Id:      dig.String(),
 		Name:    name,
 		Started: timestamppb.New(now),
-		Group:   &recorder.Group.Id,
 	}
 
 	for _, o := range opts {
@@ -65,6 +64,8 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 	}
 
 	rec.sync()
+
+	recorder.Join(dig)
 
 	return rec
 }

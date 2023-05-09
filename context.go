@@ -15,4 +15,9 @@ func RecorderFromContext(ctx context.Context) *Recorder {
 	return rec.(*Recorder)
 }
 
+func WithGroup(ctx context.Context, name string, labels ...*Label) (context.Context, *Recorder) {
+	rec := RecorderFromContext(ctx).WithGroup(name, labels...)
+	return RecorderToContext(ctx, rec), rec
+}
+
 type recorderKey struct{}
