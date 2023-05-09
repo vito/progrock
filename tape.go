@@ -31,6 +31,9 @@ type Tape struct {
 	// show internal vertexes
 	showInternal bool
 
+	// show output even for completed vertexes
+	showAllOutput bool
+
 	debug *ui.Vterm
 
 	l sync.Mutex
@@ -199,6 +202,13 @@ func (tape *Tape) ShowInternal(show bool) {
 	tape.showInternal = show
 }
 
+// ShowAllOutput sets whether to show output even for successful vertexes.
+func (tape *Tape) ShowAllOutput(show bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.showAllOutput = show
+}
+
 // SetWindowSize sets the size of the terminal UI, which influences the
 // dimensions for vertex logs, progress bars, etc.
 func (tape *Tape) SetWindowSize(w, h int) {
@@ -307,7 +317,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			groups = groups.AddVertex(w, u, tape.groups, vtx, haveInput)
 		}
 
-		if vtx.Completed == nil || vtx.Error != nil {
+		if tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
 			term := tape.vertexLogs(vtx.Id)
 
 			if vtx.Error != nil {

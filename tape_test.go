@@ -81,6 +81,22 @@ func TestSingleErrored(t *testing.T) {
 	testGolden(t, tape)
 }
 
+func TestSingleCompleted(t *testing.T) {
+	t.Run("no show all output", func(t *testing.T) {
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a").Done(nil)
+		testGolden(t, tape)
+	})
+	t.Run("show all output", func(t *testing.T) {
+		tape := progrock.NewTape()
+		tape.ShowAllOutput(true)
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a").Done(nil)
+		testGolden(t, tape)
+	})
+}
+
 func TestSingleRunningTasks(t *testing.T) {
 	tape := progrock.NewTape()
 
