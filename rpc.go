@@ -68,13 +68,23 @@ func ServeRPC(l net.Listener, w Writer) (Writer, error) {
 		attachedClients: wg,
 	}
 
-	s := rpc.NewServer()
-	err := s.Register(recv)
+	srv := rpc.NewServer()
+	err := srv.Register(recv)
 	if err != nil {
 		return nil, err
 	}
 
-	go s.Accept(l)
+	// avoid using srv.Accept() because it logs when the listener closes
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+
+			srv.ServeConn(conn)
+		}
+	}()
 
 	return WaitWriter{
 		Writer: w,
