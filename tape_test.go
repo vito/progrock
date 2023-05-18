@@ -95,6 +95,13 @@ func TestSingleCompleted(t *testing.T) {
 		runningVtx(recorder, "a", "vertex a").Done(nil)
 		testGolden(t, tape)
 	})
+	t.Run("done", func(t *testing.T) {
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a").Done(nil)
+		tape.Close()
+		testGolden(t, tape)
+	})
 }
 
 func TestSingleRunningTasks(t *testing.T) {

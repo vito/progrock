@@ -179,7 +179,8 @@ func (tape *Tape) TotalCount() int {
 	return len(tape.vertexes)
 }
 
-// Close marks the Tape as done. (This currently has no effect.)
+// Close marks the Tape as done, which tells it to display all vertex output
+// for the final render.
 func (tape *Tape) Close() error {
 	tape.l.Lock()
 	tape.done = true
@@ -317,7 +318,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			groups = groups.AddVertex(w, u, tape.groups, vtx, haveInput)
 		}
 
-		if tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
+		if tape.done || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
 			term := tape.vertexLogs(vtx.Id)
 
 			if vtx.Error != nil {
@@ -329,6 +330,10 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			buf := new(bytes.Buffer)
 			groups.TermPrefix(buf, u, vtx)
 			term.SetPrefix(buf.String())
+
+			if tape.done {
+				term.SetHeight(term.UsedHeight())
+			}
 
 			if err := u.RenderTerm(w, term); err != nil {
 				return err
