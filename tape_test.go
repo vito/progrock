@@ -60,7 +60,7 @@ func TestSinglePending(t *testing.T) {
 
 	recorder := progrock.NewRecorder(tape)
 
-	recorder.Record(&progrock.StatusUpdate{
+	recorder.WriteStatus(&progrock.StatusUpdate{
 		Vertexes: []*progrock.Vertex{
 			{
 				Id:   "a",

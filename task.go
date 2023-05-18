@@ -53,7 +53,7 @@ func (recorder *TaskRecorder) Current(cur int64) {
 }
 
 func (recorder *TaskRecorder) sync() {
-	recorder.Recorder.Record(&StatusUpdate{
+	recorder.Recorder.WriteStatus(&StatusUpdate{
 		Tasks: []*VertexTask{
 			recorder.Task,
 		},

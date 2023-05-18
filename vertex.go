@@ -135,7 +135,7 @@ func (recorder *VertexRecorder) Cached() {
 
 // sync sends an update for the vertex.
 func (recorder *VertexRecorder) sync() {
-	recorder.Recorder.Record(&StatusUpdate{
+	recorder.Recorder.WriteStatus(&StatusUpdate{
 		Vertexes: []*Vertex{
 			recorder.Vertex,
 		},
@@ -203,7 +203,7 @@ func (w *recordWriter) Write(b []byte) (int, error) {
 
 	now := Clock.Now()
 
-	w.Recorder.Record(&StatusUpdate{
+	w.Recorder.WriteStatus(&StatusUpdate{
 		Logs: []*VertexLog{
 			{
 				Vertex:    w.Vertex.Id,

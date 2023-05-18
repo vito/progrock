@@ -44,8 +44,11 @@ func newEmptyRecorder(w Writer) *Recorder {
 	}
 }
 
-// Record sends a deep-copy of the status update to the Writer.
-func (recorder *Recorder) Record(status *StatusUpdate) error {
+// Recorder is also a Writer so that you can forward events to it directly.
+var _ Writer = (*Recorder)(nil)
+
+// WriteStatus sends a deep-copy of the status update to the Writer.
+func (recorder *Recorder) WriteStatus(status *StatusUpdate) error {
 	// perform a deep-copy so buffered writes don't get mutated, similar to
 	// copying in Write([]byte) when []byte comes from sync.Pool
 	return recorder.w.WriteStatus(proto.Clone(status).(*StatusUpdate))
@@ -98,7 +101,7 @@ func (recorder *Recorder) Join(vertexes ...digest.Digest) {
 		strs[i] = v.String()
 	}
 
-	recorder.Record(&StatusUpdate{
+	recorder.WriteStatus(&StatusUpdate{
 		Memberships: []*Membership{
 			{
 				Group:    recorder.Group.Id,
@@ -125,7 +128,7 @@ func (recorder *Recorder) Close() error {
 
 // sync sends a progress update for the current group.
 func (recorder *Recorder) sync() {
-	recorder.Record(&StatusUpdate{
+	recorder.WriteStatus(&StatusUpdate{
 		Groups: []*Group{recorder.Group},
 	})
 }
