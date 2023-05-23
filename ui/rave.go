@@ -280,7 +280,7 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (rave *Rave) setFPS(bpm float64) tea.Cmd {
 	bps := bpm / 60.0
 	fps := bps * FramesPerBeat
-	fps *= 3 // decrease chance of missing a frame due to timing
+	fps *= 2 // decrease chance of missing a frame due to timing
 	rave.fps = fps
 	return tea.Cmd(func() tea.Msg {
 		return SetFPSMsg(fps)
