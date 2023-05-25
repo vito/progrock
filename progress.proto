@@ -83,6 +83,11 @@ message Vertex {
   // Internal indicates that the vertex should not visible to the user by
   // default, but may be revealed with a flag.
   bool internal = 10;
+  // Weak indicates that the group should not be considered equal to non-weak
+  // groups. Weak groups may be used to group together vertexes that correspond
+  // to a single API (e.g. a Dockerfile build), as opposed to "strong" groups
+  // explicitly configured by the user (e.g. "test", "build", etc).
+  bool weak = 11;
 }
 
 // VertexTask is a task that a vertex is performing.
