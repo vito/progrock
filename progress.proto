@@ -116,6 +116,8 @@ message VertexLog {
 
 // LogStream is the standard stream that a log message was emitted to.
 enum LogStream {
+  // STDIN is /dev/stdin.
+  STDIN = 0;
   // STDOUT is /dev/stdout.
   STDOUT = 1;
   // STDOUT is /dev/stderr.
