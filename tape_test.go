@@ -168,6 +168,16 @@ func TestGroupedUngrouped(t *testing.T) {
 	testGolden(t, tape)
 }
 
+func TestGroupedWeakStrong(t *testing.T) {
+	tape := progrock.NewTape()
+
+	recorder := progrock.NewRecorder(tape)
+	recorder.WithGroup("strong group").Vertex("a", "vertex a").Done(nil)
+	recorder.WithGroup("weak group", progrock.Weak()).Vertex("b", "vertex b").Done(nil)
+
+	testGolden(t, tape)
+}
+
 func TestInputSameGroup(t *testing.T) {
 	t.Run("no verbose edges", func(t *testing.T) {
 		tape := progrock.NewTape()

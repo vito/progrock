@@ -40,30 +40,31 @@ type Tape struct {
 }
 
 const (
-	block    = "█"
-	dot      = "●"
-	emptyDot = "○"
-	vBar     = "│"
-	vbBar    = "┃"
-	hBar     = "─"
-	hdlBar   = "╴"
-	hdrBar   = "╶"
-	tBar     = "┼"
-	dBar     = "┊" // ┊┆┇┋╎
-	blCorner = "╰"
-	tlCorner = "╭"
-	trCorner = "╮"
-	brCorner = "╯"
-	vlBar    = "┤"
-	vrBar    = "├"
-	vlbBar   = "┫"
-	vrbBar   = "┣"
-	htBar    = "┴"
-	htbBar   = "┻"
-	hbBar    = "┬"
-	lCaret   = "◀" //"<"
-	rCaret   = "▶" //">"
-	dCaret   = "▼"
+	block       = "█"
+	dot         = "●"
+	emptyDot    = "○"
+	vBar        = "│"
+	vbBar       = "┃"
+	hBar        = "─"
+	hdlBar      = "╴"
+	hdrBar      = "╶"
+	tBar        = "┼"
+	dBar        = "┊" // ┊┆┇┋╎
+	blCorner    = "╰"
+	tlCorner    = "╭"
+	trCorner    = "╮"
+	brCorner    = "╯"
+	vlBar       = "┤"
+	vrBar       = "├"
+	vlbBar      = "┫"
+	vrbBar      = "┣"
+	htBar       = "┴"
+	htbBar      = "┻"
+	hbBar       = "┬"
+	lCaret      = "◀" //"<"
+	rCaret      = "▶" //">"
+	dCaret      = "▼"
+	dEmptyCaret = "▽"
 
 	taskSymbol          = vrbBar
 	inactiveGroupSymbol = vBar
@@ -643,10 +644,9 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Gro
 			fmt.Fprint(w, "  ")
 		}
 	}
-	fmt.Fprintln(w)
 
-	groups.GroupPrefix(w, u, pg)
-	fmt.Fprintln(w, termenv.String(group.Name).Bold())
+	fmt.Fprintln(w)
+	groups.GroupName(w, u, group)
 
 	return groups
 }
@@ -846,14 +846,23 @@ func (groups progressGroups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
 	}, vtx)
 }
 
-// GroupPrefix prints the prefix for newly added group.
-func (groups progressGroups) GroupPrefix(w io.Writer, u *UI, group progressGroup) {
+// GroupName prints the prefix and name for newly added group.
+func (groups progressGroups) GroupName(w io.Writer, u *UI, group *Group) {
 	groups.printPrefix(w, func(g progressGroup, _ *Vertex) string {
-		if group.ID() == g.ID() {
-			return dCaret
+		if g.ID() == group.Id {
+			if group.Weak {
+				return dEmptyCaret
+			} else {
+				return dCaret
+			}
 		}
 		return inactiveGroupSymbol
 	}, nil)
+	if group.Weak {
+		fmt.Fprintln(w, group.Name)
+	} else {
+		fmt.Fprintln(w, termenv.String(group.Name).Bold())
+	}
 }
 
 // TermPrefix prints the prefix for a vertex's terminal output.
