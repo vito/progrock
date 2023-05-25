@@ -15,8 +15,8 @@ func RecorderFromContext(ctx context.Context) *Recorder {
 	return rec.(*Recorder)
 }
 
-func WithGroup(ctx context.Context, name string, labels ...*Label) (context.Context, *Recorder) {
-	rec := RecorderFromContext(ctx).WithGroup(name, labels...)
+func WithGroup(ctx context.Context, name string, opts ...GroupOpt) (context.Context, *Recorder) {
+	rec := RecorderFromContext(ctx).WithGroup(name, opts...)
 	return RecorderToContext(ctx, rec), rec
 }
 

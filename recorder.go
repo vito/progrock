@@ -3,6 +3,7 @@ package progrock
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/opencontainers/go-digest"
@@ -31,10 +32,10 @@ const RootGroup = ""
 
 // NewRecorder creates a new Recorder, which writes to the given Writer.
 //
-// It also initializes the "root" group with the associated labels, which
-// involves sending a progress update for the group.
-func NewRecorder(w Writer, labels ...*Label) *Recorder {
-	return newEmptyRecorder(w).WithGroup(RootGroup, labels...)
+// It also initializes the "root" group and sends a progress update for the
+// group.
+func NewRecorder(w Writer, opts ...GroupOpt) *Recorder {
+	return newEmptyRecorder(w).WithGroup(RootGroup, opts...)
 }
 
 func newEmptyRecorder(w Writer) *Recorder {
@@ -51,13 +52,48 @@ func (recorder *Recorder) Record(status *StatusUpdate) error {
 	return recorder.w.WriteStatus(proto.Clone(status).(*StatusUpdate))
 }
 
-// WithGroup creates a new group with the given name and labels and sends a
-// progress update.
+// GroupOpt is an option for creating a Group.
+type GroupOpt func(*Group)
+
+// WithLabels sets labels on the group.
+func WithLabels(labels ...*Label) GroupOpt {
+	return func(g *Group) {
+		g.Labels = append(g.Labels, labels...)
+	}
+}
+
+// Weak indicates that the group should not be considered equal to non-weak
+// groups. Weak groups may be used to group together vertexes that correspond
+// to a single API (e.g. a Dockerfile build), as opposed to "strong" groups
+// explicitly configured by the user (e.g. "test", "build", etc).
+func Weak() GroupOpt {
+	return func(g *Group) {
+		g.Weak = true
+	}
+}
+
+// WithStarted sets the start time of the group.
+func WithStarted(started time.Time) GroupOpt {
+	return func(g *Group) {
+		g.Started = timestamppb.New(started)
+	}
+}
+
+// WithGroupID sets the ID for the group. An ID should be globally unique. If
+// not specified, the ID defaults to the group's name with the group's start
+// time appended.
+func WithGroupID(id string) GroupOpt {
+	return func(g *Group) {
+		g.Id = id
+	}
+}
+
+// WithGroup creates a new group and sends a progress update.
 //
 // Calling WithGroup with the same name will always return the same Recorder
 // instance so that you can record to a single hierarchy of groups. When the
-// group already exists, the labels argument is ignored.
-func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
+// group already exists, opts are ignored.
+func (recorder *Recorder) WithGroup(name string, opts ...GroupOpt) *Recorder {
 	recorder.groupsL.Lock()
 	defer recorder.groupsL.Unlock()
 
@@ -66,15 +102,20 @@ func (recorder *Recorder) WithGroup(name string, labels ...*Label) *Recorder {
 		return existing
 	}
 
-	now := Clock.Now()
-
-	id := fmt.Sprintf("%s@%d", name, now.UnixNano())
-
 	g := &Group{
-		Id:      id,
-		Name:    name,
-		Labels:  labels,
-		Started: timestamppb.New(now),
+		Name: name,
+	}
+
+	for _, o := range opts {
+		o(g)
+	}
+
+	if g.Started == nil {
+		g.Started = timestamppb.New(Clock.Now())
+	}
+
+	if g.Id == "" {
+		g.Id = fmt.Sprintf("%s@%d", name, g.Started.AsTime().UnixNano())
 	}
 
 	if recorder.Group != nil {
