@@ -350,6 +350,14 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
+func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm)) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	for _, vtx := range tape.vertexes {
+		f(vtx, tape.vertexLogs(vtx.Id))
+	}
+}
+
 func (tape *Tape) insert(id string, vtx *Vertex) {
 	if vtx.Started == nil {
 		// skip pending vertices; too complicated to deal with

@@ -114,10 +114,18 @@ func (term *Vterm) ScrollPercent() float64 {
 
 const reset = termenv.CSI + termenv.ResetSeq + "m"
 
+// View returns the output for the current region of the terminal, with ANSI
+// formatting.
 func (term *Vterm) View() string {
+	return string(term.Bytes(term.Offset, term.Height))
+}
+
+// Bytes returns the output for the given region of the terminal, with
+// ANSI formatting.
+func (term *Vterm) Bytes(offset, height int) []byte {
 	used := term.vt.UsedHeight()
 	if used == 0 {
-		return ""
+		return nil
 	}
 
 	buf := term.viewBuf
@@ -125,10 +133,10 @@ func (term *Vterm) View() string {
 
 	var lines int
 	for row, line := range term.vt.Content {
-		if row < term.Offset {
+		if row < offset {
 			continue
 		}
-		if row+1 > (term.Offset + term.Height) {
+		if row+1 > (offset + height) {
 			break
 		}
 
@@ -155,11 +163,7 @@ func (term *Vterm) View() string {
 		}
 	}
 
-	// for i := lines; i < term.Height; i++ {
-	// 	buf.Write([]byte("\n"))
-	// }
-
-	return buf.String()
+	return buf.Bytes()
 }
 
 // Print prints the full log output without any formatting.
