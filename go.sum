@@ -184,6 +184,12 @@ github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5Cc
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4 h1:MX+b1wthWS36Xo9xcnQzxMJVY5pjv/o+1EiORdbJsgk=
 github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4/go.mod h1:qfoJd8OdENFcCg3MFm//aH0ah6b88mqNAYthSr14FuI=
+github.com/vito/vt100 v0.0.0-20230526162501-42606cd93f12 h1:nc72fYfbYoLxPd5CSjarWC2leI7gZNUCnYihfgYOAs0=
+github.com/vito/vt100 v0.0.0-20230526162501-42606cd93f12/go.mod h1:ByMBsZZEP04RrkT9q/UxvZOjECM8Xc/MRLZ7GLrAUXs=
+github.com/vito/vt100 v0.1.0 h1:FAwhBc9Cqdg4HFO/Huw8OvUuq5vD3sLVYK0qUaEdOE8=
+github.com/vito/vt100 v0.1.0/go.mod h1:ByMBsZZEP04RrkT9q/UxvZOjECM8Xc/MRLZ7GLrAUXs=
+github.com/vito/vt100 v0.1.1 h1:xaT02sjEjX6jbetczTmAxPnke3yATRY1SixzbYv6jxQ=
+github.com/vito/vt100 v0.1.1/go.mod h1:ByMBsZZEP04RrkT9q/UxvZOjECM8Xc/MRLZ7GLrAUXs=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

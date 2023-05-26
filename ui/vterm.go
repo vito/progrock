@@ -28,16 +28,21 @@ type Vterm struct {
 
 var debugVterm = os.Getenv("_DEBUG_VTERM") != ""
 
-func NewVterm(width int) *Vterm {
-	vt := vt100.NewVT100(1, width)
-	vt.AutoResize = true
+func NewVterm() *Vterm {
+	vt := vt100.NewVT100(
+		1,  // start with 1 row
+		80, // pre-allocate 80 columns
+	)
+	// grow vterm width until we're told the window size
+	vt.AutoResizeX = true
+	// grow vterm height forever so we never lose content
+	vt.AutoResizeY = true
 	if debugVterm {
 		vt.DebugLogs = os.Stderr
 	}
 	return &Vterm{
 		vt:      vt,
 		viewBuf: new(bytes.Buffer),
-		Width:   width,
 	}
 }
 
@@ -75,12 +80,19 @@ func (term *Vterm) SetHeight(height int) {
 
 func (term *Vterm) SetWidth(width int) {
 	term.Width = width
-	term.vt.Resize(term.vt.Height, width-lipgloss.Width(term.Prefix))
+	term.vt.AutoResizeX = false // stop auto-resizing vterm width
+	prefixWidth := lipgloss.Width(term.Prefix)
+	if term.Width > prefixWidth {
+		term.vt.Resize(term.vt.Height, width-prefixWidth)
+	}
 }
 
 func (term *Vterm) SetPrefix(prefix string) {
 	term.Prefix = prefix
-	term.vt.Resize(term.vt.Height, term.Width-lipgloss.Width(prefix))
+	prefixWidth := lipgloss.Width(prefix)
+	if term.Width > prefixWidth && !term.vt.AutoResizeX {
+		term.vt.Resize(term.vt.Height, term.Width-prefixWidth)
+	}
 }
 
 func (term *Vterm) Init() tea.Cmd {

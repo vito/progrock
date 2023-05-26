@@ -12,26 +12,6 @@ import (
 
 var ui = progrock.DefaultUI()
 
-func testGolden(t *testing.T, tape *progrock.Tape) {
-	buf := new(bytes.Buffer)
-	tape.Render(buf, ui)
-	tape.SetWindowSize(100, 100)
-
-	// t.Log("ui:\n" + buf.String())
-
-	g := goldie.New(t)
-	g.Assert(t, t.Name(), buf.Bytes())
-}
-
-func runningVtx(rec *progrock.Recorder, digest digest.Digest, name string, opts ...progrock.VertexOpt) *progrock.VertexRecorder {
-	vtx := rec.Vertex(digest, name, opts...)
-	fmt.Fprintln(vtx.Stdout(), "stdout 1")
-	fmt.Fprintln(vtx.Stderr(), "stderr 1")
-	fmt.Fprintln(vtx.Stdout(), "stdout 2")
-	fmt.Fprintln(vtx.Stderr(), "stderr 2")
-	return vtx
-}
-
 func TestEmpty(t *testing.T) {
 	tape := progrock.NewTape()
 	testGolden(t, tape)
@@ -557,4 +537,55 @@ func TestVertexInputsCrossGapRight(t *testing.T) {
 	).Done(nil)
 
 	testGolden(t, tape)
+}
+
+func TestAutoResize(t *testing.T) {
+	tape := progrock.NewTape()
+	recorder := progrock.NewRecorder(tape)
+
+	t.Run("initially unbounded", func(t *testing.T) {
+		vtx := recorder.Vertex("long", "long lines")
+		for i := 0; i < 200; i++ {
+			fmt.Fprint(vtx.Stdout(), "x")
+		}
+
+		testGoldenAutoResize(t, tape)
+	})
+
+	t.Run("respects width for existing and new", func(t *testing.T) {
+		tape.SetWindowSize(80, 24)
+
+		vtx := recorder.Vertex("long2", "more long lines")
+		for i := 0; i < 200; i++ {
+			fmt.Fprint(vtx.Stdout(), "y")
+		}
+
+		testGoldenAutoResize(t, tape)
+	})
+}
+
+func testGolden(t *testing.T, tape *progrock.Tape) {
+	buf := new(bytes.Buffer)
+	tape.SetWindowSize(80, 24)
+	tape.Render(buf, ui)
+
+	g := goldie.New(t)
+	g.Assert(t, t.Name(), buf.Bytes())
+}
+
+func testGoldenAutoResize(t *testing.T, tape *progrock.Tape) {
+	buf := new(bytes.Buffer)
+	tape.Render(buf, ui)
+
+	g := goldie.New(t)
+	g.Assert(t, t.Name(), buf.Bytes())
+}
+
+func runningVtx(rec *progrock.Recorder, digest digest.Digest, name string, opts ...progrock.VertexOpt) *progrock.VertexRecorder {
+	vtx := rec.Vertex(digest, name, opts...)
+	fmt.Fprintln(vtx.Stdout(), "stdout 1")
+	fmt.Fprintln(vtx.Stderr(), "stderr 1")
+	fmt.Fprintln(vtx.Stdout(), "stdout 2")
+	fmt.Fprintln(vtx.Stderr(), "stderr 2")
+	return vtx
 }

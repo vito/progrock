@@ -23,7 +23,11 @@ type Tape struct {
 	logs           map[string]*ui.Vterm
 	done           bool
 
+	// screen width and height
 	width, height int
+
+	// visible region for active vterms
+	termHeight int
 
 	// show edges between vertexes in the same group
 	verboseEdges bool
@@ -80,11 +84,14 @@ func NewTape() *Tape {
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
 
-		// sane defaults before size is received
-		width:  80,
-		height: 24,
+		// for explicitness: default to unbounded screen size
+		width:  -1,
+		height: -1,
 
-		debug: ui.NewVterm(80),
+		// sane default before window size is known
+		termHeight: 10,
+
+		debug: ui.NewVterm(),
 	}
 }
 
@@ -217,6 +224,7 @@ func (tape *Tape) SetWindowSize(w, h int) {
 	tape.l.Lock()
 	tape.width = w
 	tape.height = h
+	tape.termHeight = h / 4
 	for _, l := range tape.logs {
 		l.SetWidth(w)
 	}
@@ -325,7 +333,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			if vtx.Error != nil {
 				term.SetHeight(term.UsedHeight())
 			} else {
-				term.SetHeight(tape.termHeight())
+				term.SetHeight(tape.termHeight)
 			}
 
 			buf := new(bytes.Buffer)
@@ -384,14 +392,13 @@ func (tape *Tape) insert(id string, vtx *Vertex) {
 	tape.order = append(tape.order, id)
 }
 
-func (tape *Tape) termHeight() int {
-	return tape.height / 4
-}
-
 func (tape *Tape) vertexLogs(vertex string) *ui.Vterm {
 	term, found := tape.logs[vertex]
 	if !found {
-		term = ui.NewVterm(tape.width)
+		term = ui.NewVterm()
+		if tape.width != -1 {
+			term.SetWidth(tape.width)
+		}
 		tape.logs[vertex] = term
 	}
 
