@@ -350,12 +350,15 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm)) {
+func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	for _, vtx := range tape.vertexes {
-		f(vtx, tape.vertexLogs(vtx.Id))
+		if err := f(vtx, tape.vertexLogs(vtx.Id)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (tape *Tape) insert(id string, vtx *Vertex) {
