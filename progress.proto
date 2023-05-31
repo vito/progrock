@@ -4,6 +4,7 @@ package progrock;
 option go_package = "github.com/vito/progrock";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 // StatusUpdate contains a snapshot of state updates for the graph.
 message StatusUpdate {
@@ -128,3 +129,9 @@ enum LogStream {
   // STDOUT is /dev/stderr.
   STDERR = 2;
 }
+
+// ProgressService is a service that allows clients to stream updates to a
+// remote server.
+service ProgressService {
+  rpc WriteUpdates(stream StatusUpdate) returns (google.protobuf.Empty);
+};

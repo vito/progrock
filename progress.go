@@ -6,6 +6,8 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+//go:generate protoc -I=./ --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative progress.proto
+
 // VertexInstance identifies a vertex at a specific point in time.
 type VertexInstance struct {
 	VertexId string

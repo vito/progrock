@@ -1,63 +1,64 @@
 package progrock
 
 import (
-	"fmt"
+	"context"
 	"net"
-	"net/rpc"
 	"sync"
+
+	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type RPCWriter struct {
-	c *rpc.Client
+	Conn    *grpc.ClientConn
+	Updates ProgressService_WriteUpdatesClient
 }
 
-func DialRPC(net, addr string) (Writer, error) {
-	c, err := rpc.Dial(net, addr)
+func DialRPC(ctx context.Context, target string) (Writer, error) {
+	conn, err := grpc.DialContext(ctx, target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 
-	var res NoResponse
-	err = c.Call("RPCReceiver.Attach", &NoArgs{}, &res)
+	client := NewProgressServiceClient(conn)
+
+	updates, err := client.WriteUpdates(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("attach: %w", err)
+		return nil, err
 	}
 
 	return &RPCWriter{
-		c: c,
+		Conn:    conn,
+		Updates: updates,
 	}, nil
 }
 
 func (w *RPCWriter) WriteStatus(status *StatusUpdate) error {
-	var res NoResponse
-	return w.c.Call("RPCReceiver.Write", status, &res)
+	return w.Updates.Send(status)
 }
 
 func (w *RPCWriter) Close() error {
-	var res NoResponse
-	return w.c.Call("RPCReceiver.Detach", &NoArgs{}, &res)
+	_, err := w.Updates.CloseAndRecv()
+	return err
 }
 
 type RPCReceiver struct {
 	w               Writer
 	attachedClients *sync.WaitGroup
+
+	UnimplementedProgressServiceServer
 }
 
-type NoArgs struct{}
-type NoResponse struct{}
-
-func (recv *RPCReceiver) Attach(*NoArgs, *NoResponse) error {
-	recv.attachedClients.Add(1)
-	return nil
-}
-
-func (recv *RPCReceiver) Write(status *StatusUpdate, res *NoResponse) error {
-	return recv.w.WriteStatus(status)
-}
-
-func (recv *RPCReceiver) Detach(*NoArgs, *NoResponse) error {
-	recv.attachedClients.Done()
-	return nil
+func (recv *RPCReceiver) WriteUpdates(srv ProgressService_WriteUpdatesServer) error {
+	for {
+		update, err := srv.Recv()
+		if err != nil {
+			return err
+		}
+		if err := recv.w.WriteStatus(update); err != nil {
+			return err
+		}
+	}
 }
 
 func ServeRPC(l net.Listener, w Writer) (Writer, error) {
@@ -68,37 +69,24 @@ func ServeRPC(l net.Listener, w Writer) (Writer, error) {
 		attachedClients: wg,
 	}
 
-	srv := rpc.NewServer()
-	err := srv.Register(recv)
-	if err != nil {
-		return nil, err
-	}
+	srv := grpc.NewServer()
+	RegisterProgressServiceServer(srv, recv)
 
-	// avoid using srv.Accept() because it logs when the listener closes
-	go func() {
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				return
-			}
-
-			go srv.ServeConn(conn)
-		}
-	}()
+	go srv.Serve(l)
 
 	return WaitWriter{
 		Writer: w,
-
-		attachedClients: wg,
+		srv:    srv,
 	}, nil
 }
 
 type WaitWriter struct {
 	Writer
-	attachedClients *sync.WaitGroup
+
+	srv *grpc.Server
 }
 
 func (ww WaitWriter) Close() error {
-	ww.attachedClients.Wait()
+	ww.srv.GracefulStop()
 	return ww.Writer.Close()
 }
