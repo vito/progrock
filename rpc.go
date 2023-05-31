@@ -82,7 +82,7 @@ func ServeRPC(l net.Listener, w Writer) (Writer, error) {
 				return
 			}
 
-			srv.ServeConn(conn)
+			go srv.ServeConn(conn)
 		}
 	}()
 
