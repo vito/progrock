@@ -2,11 +2,13 @@ package progrock
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
-	"sync"
 
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 type RPCWriter struct {
@@ -43,8 +45,7 @@ func (w *RPCWriter) Close() error {
 }
 
 type RPCReceiver struct {
-	w               Writer
-	attachedClients *sync.WaitGroup
+	w Writer
 
 	UnimplementedProgressServiceServer
 }
@@ -53,6 +54,9 @@ func (recv *RPCReceiver) WriteUpdates(srv ProgressService_WriteUpdatesServer) er
 	for {
 		update, err := srv.Recv()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return srv.SendAndClose(&emptypb.Empty{})
+			}
 			return err
 		}
 		if err := recv.w.WriteStatus(update); err != nil {
@@ -62,11 +66,8 @@ func (recv *RPCReceiver) WriteUpdates(srv ProgressService_WriteUpdatesServer) er
 }
 
 func ServeRPC(l net.Listener, w Writer) (Writer, error) {
-	wg := new(sync.WaitGroup)
-
 	recv := &RPCReceiver{
-		w:               w,
-		attachedClients: wg,
+		w: w,
 	}
 
 	srv := grpc.NewServer()
