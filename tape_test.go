@@ -84,13 +84,25 @@ func TestSingleCompleted(t *testing.T) {
 	})
 }
 
-func TestSingleRunningTasks(t *testing.T) {
+func TestSingleCompletedTasks(t *testing.T) {
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
 	vtx := recorder.Vertex("a", "vertex a")
 	vtx.Task("task 1").Done(nil)
 	vtx.Task("task 2").Done(nil)
+
+	testGolden(t, tape)
+}
+
+func TestSingleRunningTasks(t *testing.T) {
+	tape := progrock.NewTape()
+
+	recorder := progrock.NewRecorder(tape)
+	vtx := recorder.Vertex("a", "vertex a")
+	vtx.Task("task 1")
+	vtx.Task("task 2")
+	vtx.Task("task 3").Done(nil)
 
 	testGolden(t, tape)
 }

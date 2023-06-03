@@ -1,4 +1,8 @@
+{{- if and .Started (not .Completed) -}}
+{{- Foreground "3" (printf "[%s]" (.Duration | duration)) -}}
+{{- else -}}
 {{- Foreground "8" (printf "[%s]" (.Duration | duration)) -}}
+{{- end -}}
 {{- if .Total -}}
   {{- " " -}}
   {{bar .Current .Total}}
