@@ -509,7 +509,7 @@ func TestVertexInputsCrossGapLeft(t *testing.T) {
 	ag.WithGroup("group z").Vertex(
 		"z2",
 		"vertex z2",
-		progrock.WithInputs("a1"),
+		progrock.WithInputs("a1", "b1"),
 	).Done(nil)
 
 	testGolden(t, tape)
@@ -530,10 +530,10 @@ func TestVertexInputsCrossGapRight(t *testing.T) {
 	cg.Vertex("c1", "vertex c1").Done(nil)
 	dg.Vertex("d1", "vertex d1").Done(nil)
 
-	bg.WithGroup("group z").Vertex(
+	ag.WithGroup("group z").Vertex(
 		"z",
 		"vertex z",
-		progrock.WithInputs("a1", "d1"),
+		progrock.WithInputs("c1", "d1"),
 	).Done(nil)
 
 	testGolden(t, tape)

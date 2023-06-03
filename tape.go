@@ -838,9 +838,9 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 			}
 		} else if firstParentIdx != -1 && vtxIdx < firstParentIdx && i >= vtxIdx && i < lastParentIdx {
 			if i == vtxIdx {
-				fmt.Fprint(w, groupColor(firstParentIdx, lCaret))
+				fmt.Fprint(w, groupColor(lastParentIdx, lCaret))
 			} else {
-				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+				fmt.Fprint(w, groupColor(lastParentIdx, hBar))
 			}
 		} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
 			if i == vtxIdx {
