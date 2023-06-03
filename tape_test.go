@@ -2,11 +2,13 @@ package progrock_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/sebdah/goldie/v2"
+	"github.com/stretchr/testify/require"
 	"github.com/vito/progrock"
 )
 
@@ -52,11 +54,31 @@ func TestSinglePending(t *testing.T) {
 	testGolden(t, tape)
 }
 
+func TestSingleCached(t *testing.T) {
+	tape := progrock.NewTape()
+
+	recorder := progrock.NewRecorder(tape)
+	vtx := runningVtx(recorder, "a", "vertex a")
+	vtx.Cached()
+	vtx.Done(nil)
+
+	testGolden(t, tape)
+}
+
 func TestSingleErrored(t *testing.T) {
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
-	runningVtx(recorder, "a", "vertex a").Error(fmt.Errorf("nope"))
+	runningVtx(recorder, "a", "vertex a").Done(fmt.Errorf("nope"))
+
+	testGolden(t, tape)
+}
+
+func TestSingleCanceled(t *testing.T) {
+	tape := progrock.NewTape()
+
+	recorder := progrock.NewRecorder(tape)
+	runningVtx(recorder, "a", "vertex a").Done(context.Canceled)
 
 	testGolden(t, tape)
 }
@@ -579,7 +601,9 @@ func TestAutoResize(t *testing.T) {
 func testGolden(t *testing.T, tape *progrock.Tape) {
 	buf := new(bytes.Buffer)
 	tape.SetWindowSize(80, 24)
-	tape.Render(buf, ui)
+
+	err := tape.Render(buf, ui)
+	require.NoError(t, err)
 
 	g := goldie.New(t)
 	g.Assert(t, t.Name(), buf.Bytes())
