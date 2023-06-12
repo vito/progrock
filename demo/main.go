@@ -34,8 +34,20 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, true)
+	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, true)
 	defer stop()
+
+	prog.Send(progrock.StatusInfoMsg{
+		Name:  "Foo",
+		Value: "abcdef",
+		Order: 2,
+	})
+
+	prog.Send(progrock.StatusInfoMsg{
+		Name:  "Info",
+		Value: "https://example.com",
+		Order: 1,
+	})
 
 	failedVtx := rec.Vertex("failed", "failed task in vertex")
 	// failedVtx.Task("errored task")

@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -19,15 +20,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/tmpl"
 	"github.com/vito/progrock/ui"
 )
 
 type UI struct {
 	Spinner ui.Spinner
-
-	Logs map[digest.Digest]*ui.Vterm
 
 	width, height int
 
@@ -101,17 +99,29 @@ func (ui *UI) RenderTerm(w io.Writer, term *ui.Vterm) error {
 	return err
 }
 
-func (u *UI) RenderStatus(w io.Writer, tape *Tape) error {
-	return u.tmpl.Lookup("status.tmpl").Execute(w, struct {
-		Spinner ui.Spinner
-		Tape *Tape
+func (ui *UI) RenderTrailer(w io.Writer, infos []StatusInfo) error {
+	return ui.tmpl.Lookup("trailer.tmpl").Execute(w, struct {
+		Infos []StatusInfo
 	}{
-		Spinner: u.Spinner,
-		Tape: tape,
+		Infos: infos,
 	})
 }
 
-func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, tui bool) func() {
+func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo, helpView string) error {
+	return u.tmpl.Lookup("status.tmpl").Execute(w, struct {
+		Spinner ui.Spinner
+		Tape    *Tape
+		Infos   []StatusInfo
+		Help    string
+	}{
+		Spinner: u.Spinner,
+		Tape:    tape,
+		Infos:   infos,
+		Help:    helpView,
+	})
+}
+
+func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, tui bool) (*tea.Program, func()) {
 	model := ui.NewModel(tape, interrupt, w)
 
 	opts := []tea.ProgramOption{tea.WithOutput(w)}
@@ -128,16 +138,17 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, 
 	displaying.Add(1)
 	go func() {
 		defer displaying.Done()
-		err := prog.Start()
+		_, err := prog.Run()
 		if err != nil {
 			fmt.Fprintf(w, "%s\n", termenv.String(fmt.Sprintf("display error: %s", err)).Foreground(termenv.ANSIRed))
 		}
 	}()
 
-	return func() {
+	return prog, func() {
 		prog.Send(EndMsg{})
 		displaying.Wait()
 		model.Print(os.Stderr)
+		model.PrintTrailer(os.Stderr)
 	}
 }
 
@@ -153,7 +164,7 @@ func (ui *UI) NewModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *M
 
 	return &Model{
 		tape: tape,
-		ui:      ui,
+		ui:   ui,
 
 		interrupt: interrupt,
 
@@ -180,6 +191,8 @@ type Model struct {
 	maxHeight     int
 	contentHeight int
 
+	statusInfos []StatusInfo
+
 	// UI refresh rate
 	fps float64
 
@@ -188,9 +201,24 @@ type Model struct {
 	help help.Model
 }
 
+type StatusInfo struct {
+	Name  string
+	Value string
+	Order int
+}
+
+type StatusInfoMsg StatusInfo
+
 func (model *Model) Print(w io.Writer) {
 	if err := model.tape.Render(w, model.ui); err != nil {
-		fmt.Fprintln(w, "failed to render graph:", err)
+		fmt.Fprintln(w, "failed to render tape:", err)
+		return
+	}
+}
+
+func (model *Model) PrintTrailer(w io.Writer) {
+	if err := model.ui.RenderTrailer(w, model.statusInfos); err != nil {
+		fmt.Fprintln(w, "failed to render trailer:", err)
 		return
 	}
 }
@@ -256,6 +284,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.SetWindowSize(msg.Width, msg.Height)
 
+	case StatusInfoMsg:
+		infos := append([]StatusInfo{}, m.statusInfos...)
+		infos = append(infos, StatusInfo(msg))
+		sort.Slice(infos, func(i, j int) bool {
+			if infos[i].Order == infos[j].Order {
+				return infos[i].Name < infos[j].Name
+			}
+			return infos[i].Order < infos[j].Order
+		})
+		m.statusInfos = infos
+
 	case EndMsg:
 		m.finished = true
 		// m.render()
@@ -312,16 +351,14 @@ func (m *Model) View() string {
 	widthMinusHelp := m.maxWidth - lipgloss.Width(helpView)
 	widthMinusHelp -= len(helpSep)
 
-	buf := new(bytes.Buffer)
-	m.ui.RenderStatus(buf, m.tape)
+	statusBuf := new(bytes.Buffer)
+	m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos, helpView)
 
 	footer := lipgloss.JoinHorizontal(
 		lipgloss.Bottom,
 		lipgloss.NewStyle().
 			MaxWidth(widthMinusHelp).
-			Render(buf.String()),
-		helpSep,
-		helpView,
+			Render(statusBuf.String()),
 	)
 
 	chromeHeight := lipgloss.Height(footer)
