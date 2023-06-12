@@ -12,6 +12,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/sebdah/goldie/v2 v2.5.3
+	github.com/stretchr/testify v1.7.0
 	github.com/vito/vt100 v0.1.2
 	github.com/zmb3/spotify/v2 v2.3.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
@@ -24,6 +25,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
 	github.com/containerd/console v1.0.3 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
