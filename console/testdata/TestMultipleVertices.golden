@@ -1,0 +1,63 @@
+[35m1:[0m vtx1
+[35m1:[0m [0.00s] 1.0 hi
+[35m1:[0m [0.00s] 1.0 hi again
+[35m1:[0m [0.00s] 1.0 im very chatty
+[35m1:[0m [0.00s] 1.1 hi
+[35m1:[0m [0.00s] 1.1 hi again
+[35m1:[0m [0.00s] 1.1 im very chatty
+[35m1:[0m [0.00s] 1.2 hi
+[35m1:[0m [0.00s] 1.2 hi again
+[35m1:[0m [0.00s] 1.2 im very chatty
+[35m1:[0m [0.00s] 1.3 hi
+[35m1:[0m ...
+
+[35m2:[0m vtx2
+[35m2:[0m [0.00s] 2.0 im less chatty
+[35m2:[0m [0.00s] 2.1 im less chatty
+[35m2:[0m [0.00s] 2.2 im less chatty
+[35m2:[0m ...
+
+[35m1:[0m vtx1
+[35m1:[0m [0.00s] 1.3 hi again
+[35m1:[0m [0.00s] 1.3 im very chatty
+[35m1:[0m [0.00s] 1.4 hi
+[35m1:[0m [0.00s] 1.4 hi again
+[35m1:[0m [0.00s] 1.4 im very chatty
+[35m1:[0m [0.00s] 1.5 hi
+[35m1:[0m [0.00s] 1.5 hi again
+[35m1:[0m [0.00s] 1.5 im very chatty
+[35m1:[0m [0.00s] 1.6 hi
+[35m1:[0m ...
+
+[35m2:[0m vtx2
+[35m2:[0m [0.00s] 2.3 im less chatty
+[35m2:[0m [0.00s] 2.4 im less chatty
+[35m2:[0m [0.00s] 2.5 im less chatty
+[35m2:[0m ...
+
+[35m1:[0m vtx1
+[35m1:[0m [0.00s] 1.6 hi again
+[35m1:[0m [0.00s] 1.6 im very chatty
+[35m1:[0m [0.00s] 1.7 hi
+[35m1:[0m [0.00s] 1.7 hi again
+[35m1:[0m [0.00s] 1.7 im very chatty
+[35m1:[0m [0.00s] 1.8 hi
+[35m1:[0m [0.00s] 1.8 hi again
+[35m1:[0m [0.00s] 1.8 im very chatty
+[35m1:[0m [0.00s] 1.9 hi
+[35m1:[0m ...
+
+[35m2:[0m vtx2
+[35m2:[0m [0.00s] 2.6 im less chatty
+[35m2:[0m [0.00s] 2.7 im less chatty
+[35m2:[0m [0.00s] 2.8 im less chatty
+[35m2:[0m ...
+
+[35m1:[0m vtx1
+[35m1:[0m [0.00s] 1.9 hi again
+[35m1:[0m [0.00s] 1.9 im very chatty
+[35m1:[0m vtx1 [32mDONE[0m
+
+[35m2:[0m vtx2
+[35m2:[0m [0.00s] 2.9 im less chatty
+[35m2:[0m vtx2 [32mDONE[0m
