@@ -47,11 +47,12 @@ func TestVertexGroups(t *testing.T) {
 	level2 := g1.WithGroup("subgroup1").Vertex("vtx2", "second vertex")
 	fmt.Fprintln(level2.Stdout(), "hello 2")
 
-	multi := g1.Vertex("vtx3", "third vertex")
-	g2.Join("vtx3")
-
 	level1.Done(nil)
 	level2.Done(nil)
+
+	g2.Join("vtx3")
+	multi := g1.Vertex("vtx3", "third vertex")
+
 	multi.Done(nil)
 
 	testGolden(t, buf)
@@ -111,6 +112,31 @@ func TestMultipleVertices(t *testing.T) {
 
 	vtx1 := rec.Vertex("vtx1", "vtx1")
 	vtx2 := rec.Vertex("vtx2", "vtx2")
+
+	for i := 0; i < 10; i++ {
+		fmt.Fprintf(vtx1.Stdout(), "1.%d hi\n", i)
+		fmt.Fprintf(vtx1.Stdout(), "1.%d hi again\n", i)
+		fmt.Fprintf(vtx1.Stdout(), "1.%d im very chatty\n", i)
+		fmt.Fprintf(vtx2.Stdout(), "2.%d im less chatty\n", i)
+		clock.Advance(console.AntiFlicker)
+	}
+
+	vtx1.Done(nil)
+	vtx2.Done(nil)
+
+	testGolden(t, buf)
+}
+
+func TestMultipleVerticesInternal(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+
+	buf := bytes.NewBuffer(nil)
+	writer := console.NewWriter(buf, console.WithClock(clock))
+
+	rec := progrock.NewRecorder(writer)
+
+	vtx1 := rec.Vertex("vtx1", "vtx1")
+	vtx2 := rec.Vertex("vtx2", "vtx2", progrock.Internal())
 
 	for i := 0; i < 10; i++ {
 		fmt.Fprintf(vtx1.Stdout(), "1.%d hi\n", i)

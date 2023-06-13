@@ -36,11 +36,12 @@ type lastStatus struct {
 }
 
 type textMux struct {
-	w        io.Writer
-	ui       Components
-	current  string
-	last     map[string]lastStatus
-	notFirst bool
+	w            io.Writer
+	ui           Components
+	current      string
+	last         map[string]lastStatus
+	notFirst     bool
+	showInternal bool
 }
 
 func (p *textMux) printVtx(t *trace, dgst string) {
@@ -50,6 +51,10 @@ func (p *textMux) printVtx(t *trace, dgst string) {
 
 	v, ok := t.verticesById[dgst]
 	if !ok {
+		return
+	}
+
+	if v.Internal && !p.showInternal {
 		return
 	}
 
