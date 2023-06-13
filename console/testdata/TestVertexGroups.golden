@@ -1,0 +1,14 @@
+[35m1:[0m first vertex
+[35m1:[0m > in [34mgroup1[0m
+[35m1:[0m [0.00s] hello 1
+[35m1:[0m first vertex [32mDONE[0m
+
+[35m2:[0m second vertex
+[35m2:[0m > in [34mgroup1 > subgroup1[0m
+[35m2:[0m [0.00s] hello 2
+[35m2:[0m second vertex [32mDONE[0m
+
+[35m3:[0m third vertex
+[35m3:[0m > in [34mgroup1[0m
+[35m3:[0m > in [34mgroup2[0m
+[35m3:[0m third vertex [32mDONE[0m

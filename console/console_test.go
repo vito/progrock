@@ -32,6 +32,31 @@ func TestVertexStart(t *testing.T) {
 	testGolden(t, buf)
 }
 
+func TestVertexGroups(t *testing.T) {
+	buf := bytes.NewBuffer(nil)
+	writer := console.NewWriter(buf)
+
+	rec := progrock.NewRecorder(writer)
+
+	g1 := rec.WithGroup("group1")
+	g2 := rec.WithGroup("group2")
+
+	level1 := g1.Vertex("vtx1", "first vertex")
+	fmt.Fprintln(level1.Stdout(), "hello 1")
+
+	level2 := g1.WithGroup("subgroup1").Vertex("vtx2", "second vertex")
+	fmt.Fprintln(level2.Stdout(), "hello 2")
+
+	multi := g1.Vertex("vtx3", "third vertex")
+	g2.Join("vtx3")
+
+	level1.Done(nil)
+	level2.Done(nil)
+	multi.Done(nil)
+
+	testGolden(t, buf)
+}
+
 func TestVertexStartStdoutStderr(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
 	writer := console.NewWriter(buf)

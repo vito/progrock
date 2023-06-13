@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/ring"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -17,10 +18,11 @@ import (
 type trace struct {
 	clock        clockwork.Clock
 	ui           Components
+	groupsById   map[string]*group
 	verticesById map[string]*vertex
 	nextIndex    int
 	updates      map[string]struct{}
-	tui          bool
+	memberships  map[string][]string
 }
 
 type vertex struct {
@@ -46,6 +48,10 @@ type vertex struct {
 	termBytes int
 }
 
+func (v *vertex) name() string {
+	return strings.Join(strings.Fields(v.Name), " ")
+}
+
 func (v *vertex) update() {
 	if v.updates == 0 {
 		serverNow := v.clock.Now()
@@ -54,13 +60,34 @@ func (v *vertex) update() {
 	v.updates++
 }
 
+type group struct {
+	*progrock.Group
+}
+
+func (g *group) name(t *trace) string {
+	name := g.Name
+
+	p := g.Parent
+	for p != nil {
+		pg := t.groupsById[*p]
+		if pg.Name == progrock.RootGroup {
+			break
+		}
+		name = pg.Name + " > " + name
+		p = pg.Parent
+	}
+
+	return name
+}
+
 func newTrace(ui Components, clock clockwork.Clock) *trace {
 	return &trace{
 		clock:        clock,
 		ui:           ui,
 		verticesById: make(map[string]*vertex),
+		groupsById:   make(map[string]*group),
 		updates:      make(map[string]struct{}),
-		tui:          false,
+		memberships:  make(map[string][]string),
 	}
 }
 
@@ -109,8 +136,8 @@ func (t *trace) triggerVertexEvent(v *progrock.Vertex) {
 	t.verticesById[v.Id].prev = v
 }
 
-func (t *trace) update(s *progrock.StatusUpdate) {
-	for _, v := range s.Vertexes {
+func (t *trace) update(update *progrock.StatusUpdate) {
+	for _, v := range update.Vertexes {
 		prev, ok := t.verticesById[v.Id]
 		if !ok {
 			t.nextIndex++
@@ -128,7 +155,7 @@ func (t *trace) update(s *progrock.StatusUpdate) {
 		}
 	}
 
-	for _, task := range s.Tasks {
+	for _, task := range update.Tasks {
 		v, ok := t.verticesById[task.Vertex]
 		if !ok {
 			continue // shouldn't happen
@@ -146,7 +173,7 @@ func (t *trace) update(s *progrock.StatusUpdate) {
 		v.update()
 	}
 
-	for _, l := range s.Logs {
+	for _, l := range update.Logs {
 		v, ok := t.verticesById[l.Vertex]
 		if !ok {
 			continue // shouldn't happen
@@ -168,6 +195,26 @@ func (t *trace) update(s *progrock.StatusUpdate) {
 		v.logsPartial = !complete
 		t.updates[v.Id] = struct{}{}
 		v.update()
+	}
+
+	for _, g := range update.Groups {
+		t.groupsById[g.Id] = &group{Group: g}
+	}
+
+	for _, m := range update.Memberships {
+		for _, vid := range m.Vertexes {
+			var alreadyIn bool
+			for _, g := range t.memberships[vid] {
+				if g == m.Group {
+					alreadyIn = true
+					break
+				}
+			}
+
+			if !alreadyIn {
+				t.memberships[vid] = append(t.memberships[vid], m.Group)
+			}
+		}
 	}
 }
 
@@ -222,6 +269,7 @@ type Components struct {
 	TextVertexCached              string
 	TextVertexDone                string
 	TextVertexDoneDuration        string
+	TextVertexGroup               string
 	TextVertexTask                string
 	TextVertexTaskDuration        string
 	TextVertexTaskProgressBound   string
@@ -240,6 +288,7 @@ var DefaultUI = Components{
 	TextVertexErrored:             vertexID + " %s " + termenv.String("ERROR: %s").Foreground(termenv.ANSIRed).String(),
 	TextVertexCached:              vertexID + " %s " + termenv.String("CACHED").Foreground(termenv.ANSICyan).String(),
 	TextVertexDone:                vertexID + " %s " + termenv.String("DONE").Foreground(termenv.ANSIGreen).String(),
+	TextVertexGroup:               vertexID + " > in " + termenv.String("%s").Foreground(termenv.ANSIBlue).String(),
 	TextVertexTask:                vertexID + " %[3]s %[2]s",
 	TextVertexTaskProgressBound:   "%s / %s",
 	TextVertexTaskProgressUnbound: "%s",

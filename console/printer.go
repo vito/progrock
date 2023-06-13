@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/docker/go-units"
+	"github.com/vito/progrock"
 )
 
 // AntiFlicker is used to prevent bouncing between concurrent vertices too
@@ -70,6 +71,7 @@ func (p *textMux) printVtx(t *trace, dgst string) {
 		}
 
 		p.printHeader(v)
+		p.printGroups(v, t)
 	}
 
 	for _, name := range v.tasks {
@@ -163,20 +165,37 @@ func (p *textMux) printVtx(t *trace, dgst string) {
 
 func (p *textMux) printHeader(v *vertex) {
 	if v.Canceled {
-		fmt.Fprintf(p.w, p.ui.TextVertexCanceled, v.index, v.Name)
+		fmt.Fprintf(p.w, p.ui.TextVertexCanceled, v.index, v.name())
 	} else if v.Error != nil {
-		fmt.Fprintf(p.w, p.ui.TextVertexErrored, v.index, v.Name, *v.Error)
+		fmt.Fprintf(p.w, p.ui.TextVertexErrored, v.index, v.name(), *v.Error)
 	} else if v.Cached {
-		fmt.Fprintf(p.w, p.ui.TextVertexCached, v.index, v.Name)
+		fmt.Fprintf(p.w, p.ui.TextVertexCached, v.index, v.name())
 	} else if v.Completed != nil {
-		fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index, v.Name)
+		fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index, v.name())
 	} else if v.Started != nil {
-		fmt.Fprintf(p.w, p.ui.TextVertexRunning, v.index, v.Name)
+		fmt.Fprintf(p.w, p.ui.TextVertexRunning, v.index, v.name())
 	} else {
-		fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index, v.Name)
+		fmt.Fprintf(p.w, p.ui.TextVertexDone, v.index, v.name())
 	}
 
 	fmt.Fprintln(p.w)
+}
+
+func (p *textMux) printGroups(v *vertex, t *trace) {
+	for _, gid := range t.memberships[v.Id] {
+		g, found := t.groupsById[gid]
+		if !found {
+			continue
+		}
+
+		if g.Name == progrock.RootGroup {
+			// ignore root group
+			continue
+		}
+
+		fmt.Fprintf(p.w, p.ui.TextVertexGroup, v.index, g.name(t))
+		fmt.Fprintln(p.w)
+	}
 }
 
 func sortCompleted(t *trace, m map[string]struct{}) []string {

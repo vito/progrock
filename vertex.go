@@ -63,9 +63,17 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 		Vertex:   vtx,
 	}
 
-	rec.sync()
-
-	recorder.Join(dig)
+	recorder.Record(&StatusUpdate{
+		Vertexes: []*Vertex{
+			vtx,
+		},
+		Memberships: []*Membership{
+			{
+				Group:    recorder.Group.Id,
+				Vertexes: []string{vtx.Id},
+			},
+		},
+	})
 
 	return rec
 }
