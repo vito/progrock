@@ -11,6 +11,7 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 )
 
 func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...string) {
