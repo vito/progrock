@@ -22,7 +22,9 @@ func NixImage(ctx dagger.Context, flake *dagger.Directory, packages ...string) *
 			WithMountedDirectory("/flake", flake).
 			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}))
 
-	return ctx.Client().Container().Import(result)
+	return ctx.Client().Container().
+		Import(result).
+		WithMountedTemp("/tmp")
 }
 
 func nixBase(ctx dagger.Context) *dagger.Container {
