@@ -37,6 +37,14 @@ func Internal() VertexOpt {
 	}
 }
 
+// Focused marks the vertex as focused, indicating it should be featured more
+// prominently in the UI.
+func Focused() VertexOpt {
+	return func(vertex *Vertex) {
+		vertex.Focused = true
+	}
+}
+
 // Vertex creates a new VertexRecorder for the given vertex.
 //
 // While the digest can technically be an arbitrary string, it is given a
