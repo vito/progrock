@@ -1,6 +1,7 @@
-{{.Spinner.ViewFancy}} Playing ({{.Tape.CompletedCount}}/{{.Tape.TotalCount}})
-{{- Foreground "8" " • " -}}
+{{.Spinner}} Playing ({{.Tape.CompletedCount}}/{{.Tape.TotalCount}})
 {{- range .Infos -}}
-{{- Bold .Name}}: {{.Value}} {{- Foreground "8" " • " -}}
+{{- Foreground "8" " • " -}} {{- Bold .Name}}: {{.Value}}
 {{- end -}}
-{{- .Help -}}
+{{- with .Help -}}
+{{- Foreground "8" " • " -}} {{- . -}}
+{{- end -}}

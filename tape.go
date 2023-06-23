@@ -14,14 +14,23 @@ import (
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
 type Tape struct {
-	order          []string
-	vertexes       map[string]*Vertex
-	groups         map[string]*Group
+	// order to display vertices
+	order []string
+
+	// raw vertex/group state from the event stream
+	vertexes map[string]*Vertex
+	groups   map[string]*Group
+
+	// vertex <-> group mappings
 	group2vertexes map[string]map[string]struct{}
 	vertex2groups  map[string]map[string]struct{}
-	tasks          map[string][]*VertexTask
-	logs           map[string]*ui.Vterm
-	done           bool
+
+	// vertex state
+	tasks map[string][]*VertexTask
+	logs  map[string]*ui.Vterm
+
+	// whether the tape has been closed
+	done bool
 
 	// screen width and height
 	width, height int
@@ -29,14 +38,11 @@ type Tape struct {
 	// visible region for active vterms
 	termHeight int
 
-	// show edges between vertexes in the same group
-	verboseEdges bool
-
-	// show internal vertexes
-	showInternal bool
-
-	// show output even for completed vertexes
-	showAllOutput bool
+	// UI config
+	verboseEdges  bool // show edges between vertexes in the same group
+	showInternal  bool // show internal vertexes
+	showAllOutput bool // show output even for completed vertexes
+	focus         bool // only show 'focused' vertex output, condensing the rest
 
 	debug *ui.Vterm
 
@@ -167,6 +173,35 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	return nil
 }
 
+func (tape *Tape) Vertices() []*Vertex {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+
+	var vertices []*Vertex
+	for _, vid := range tape.order {
+		vtx, found := tape.vertexes[vid]
+		if !found {
+			// should be impossible
+			continue
+		}
+
+		vertices = append(vertices, vtx)
+	}
+
+	return vertices
+}
+
+func (tape *Tape) RunningVertex() *Vertex {
+	for i := len(tape.order) - 1; i >= 0; i-- {
+		vid := tape.order[i]
+		vtx := tape.vertexes[vid]
+		if vtx.Started != nil && vtx.Completed == nil {
+			return vtx
+		}
+	}
+	return nil
+}
+
 // CompletedCount returns the number of completed vertexes.
 func (tape *Tape) CompletedCount() int {
 	tape.l.Lock()
@@ -218,6 +253,13 @@ func (tape *Tape) ShowAllOutput(show bool) {
 	tape.showAllOutput = show
 }
 
+// Focus sets whether to hide output of non-focused vertexes.
+func (tape *Tape) Focus(focused bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.focus = focused
+}
+
 // SetWindowSize sets the size of the terminal UI, which influences the
 // dimensions for vertex logs, progress bars, etc.
 func (tape *Tape) SetWindowSize(w, h int) {
@@ -251,6 +293,16 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 		groups:         tape.groups,
 		group2vertexes: tape.group2vertexes,
 		vertex2groups:  tape.vertex2groups,
+
+		focus:        tape.focus,
+		showInternal: tape.showInternal,
+	}
+
+	var groupsW io.Writer
+	if tape.focus {
+		groupsW = io.Discard
+	} else {
+		groupsW = w
 	}
 
 	var completed []*Vertex
@@ -281,10 +333,15 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			continue
 		}
 
-		groups = groups.Reap(w, u, order[i:])
+		if tape.focus && !vtx.Focused && vtx.Error == nil {
+			// skip non-errored non-focused vertices
+			continue
+		}
+
+		groups = groups.Reap(groupsW, u, order[i:])
 
 		for _, g := range b.Groups(vtx) {
-			groups = groups.AddGroup(w, u, b, g, tape.debug)
+			groups = groups.AddGroup(groupsW, u, b, g, tape.debug)
 		}
 
 		symbol := block
@@ -292,14 +349,14 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
 
-		groups.VertexPrefix(w, u, vtx, symbol, tape.debug)
+		groups.VertexPrefix(groupsW, u, vtx, symbol, tape.debug)
 		if err := u.RenderVertex(w, vtx); err != nil {
 			return err
 		}
 
 		tasks := tape.tasks[vtx.Id]
 		for _, t := range tasks {
-			groups.TaskPrefix(w, u, vtx)
+			groups.TaskPrefix(groupsW, u, vtx)
 			if err := u.RenderTask(w, t); err != nil {
 				return err
 			}
@@ -324,7 +381,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 		}
 
 		if len(haveInput) > 0 {
-			groups = groups.AddVertex(w, u, tape.groups, vtx, haveInput)
+			groups = groups.AddVertex(groupsW, u, tape.groups, vtx, haveInput)
 		}
 
 		if tape.done || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
@@ -338,7 +395,10 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 			buf := new(bytes.Buffer)
 			groups.TermPrefix(buf, u, vtx)
-			term.SetPrefix(buf.String())
+
+			if !tape.focus {
+				term.SetPrefix(buf.String())
+			}
 
 			if tape.done {
 				term.SetHeight(term.UsedHeight())
@@ -350,7 +410,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 		}
 	}
 
-	groups.Reap(w, u, nil)
+	groups.Reap(groupsW, u, nil)
 
 	tape.debug.SetHeight(10)
 	fmt.Fprint(w, tape.debug.View())
@@ -407,8 +467,12 @@ func (tape *Tape) vertexLogs(vertex string) *ui.Vterm {
 
 type bouncer struct {
 	groups         map[string]*Group
+	vertices       map[string]*Vertex
 	group2vertexes map[string]map[string]struct{}
 	vertex2groups  map[string]map[string]struct{}
+
+	focus        bool
+	showInternal bool
 }
 
 func (b *bouncer) Groups(vtx *Vertex) []*Group {
@@ -427,6 +491,25 @@ func (b *bouncer) Groups(vtx *Vertex) []*Group {
 	})
 
 	return groups
+}
+
+func (b *bouncer) VisibleVertices(group *Group) []*Vertex {
+	var visible []*Vertex
+	for vid := range b.group2vertexes[group.Id] {
+		vtx, found := b.vertices[vid]
+		if !found {
+			// shouldn't happen
+			continue
+		}
+
+		if (b.focus && !vtx.Focused) || (vtx.Internal && !b.showInternal) {
+			continue
+		}
+
+		visible = append(visible, vtx)
+	}
+
+	return visible
 }
 
 func (b *bouncer) Parent(group *Group) (*Group, bool) {

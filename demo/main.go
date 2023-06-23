@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,6 +20,7 @@ func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...str
 	okVtx := rec.Vertex(
 		digest.FromString(fmt.Sprintf("%d", time.Now().UnixNano())),
 		cmdline,
+		progrock.Focused(),
 	)
 
 	cmd := exec.CommandContext(ctx, exe, args...)
@@ -27,8 +29,21 @@ func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...str
 	okVtx.Done(cmd.Run())
 }
 
+var focus bool
+var showInternal bool
+
+func init() {
+	flag.BoolVar(&focus, "focus", false, "focus mode")
+	flag.BoolVar(&showInternal, "debug", false, "show internal vertices")
+}
+
 func main() {
+	flag.Parse()
+
 	tape := progrock.NewTape()
+	tape.Focus(focus)
+	tape.ShowInternal(showInternal)
+
 	rec := progrock.NewRecorder(tape)
 
 	ctx, cancel := context.WithCancel(context.Background())

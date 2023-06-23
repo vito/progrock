@@ -89,6 +89,11 @@ message Vertex {
   // Internal indicates that the vertex should not visible to the user by
   // default, but may be revealed with a flag.
   bool internal = 10;
+  // Focused indicates that the vertex is more important than other vertices,
+  // and should perhaps be displayed more prominently. For example, this might
+  // be used to mark the command that actually "does the thing" - runs the
+  // tests, does a build, whatever.
+  bool focused = 11;
 }
 
 // VertexTask is a task that a vertex is performing.

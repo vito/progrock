@@ -25,6 +25,8 @@ let
     };
   };
 in
-pkgs.runCommand "write-docker-tar" {} ''
-  ${stream} > $out
+pkgs.runCommand "write-oci-layout" {
+  nativeBuildInputs = [ pkgs.skopeo ];
+} ''
+  ${stream} | gzip --fast > $out
 ''

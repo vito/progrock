@@ -109,15 +109,32 @@ func (ui *UI) RenderTrailer(w io.Writer, infos []StatusInfo) error {
 
 func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo, helpView string) error {
 	return u.tmpl.Lookup("status.tmpl").Execute(w, struct {
-		Spinner ui.Spinner
+		Spinner string
 		Tape    *Tape
 		Infos   []StatusInfo
 		Help    string
 	}{
-		Spinner: u.Spinner,
+		Spinner: u.Spinner.ViewFancy(),
 		Tape:    tape,
 		Infos:   infos,
 		Help:    helpView,
+	})
+}
+
+func (u *UI) RenderFocusStatus(w io.Writer, tape *Tape, infos []StatusInfo, helpView string) error {
+	spinner, _, _ := u.Spinner.ViewFrame(pulse)
+	return u.tmpl.Lookup("focus-status.tmpl").Execute(w, struct {
+		Spinner      string
+		VertexSymbol string
+		Tape         *Tape
+		Infos        []StatusInfo
+		Help         string
+	}{
+		Spinner:      spinner,
+		VertexSymbol: block,
+		Tape:         tape,
+		Infos:        infos,
+		Help:         helpView,
 	})
 }
 
@@ -209,15 +226,15 @@ type StatusInfo struct {
 
 type StatusInfoMsg StatusInfo
 
-func (model *Model) Print(w io.Writer) {
-	if err := model.tape.Render(w, model.ui); err != nil {
+func (m *Model) Print(w io.Writer) {
+	if err := m.tape.Render(w, m.ui); err != nil {
 		fmt.Fprintln(w, "failed to render tape:", err)
 		return
 	}
 }
 
-func (model *Model) PrintTrailer(w io.Writer) {
-	if err := model.ui.RenderTrailer(w, model.statusInfos); err != nil {
+func (m *Model) PrintTrailer(w io.Writer) {
+	if err := m.ui.RenderTrailer(w, m.statusInfos); err != nil {
 		fmt.Fprintln(w, "failed to render trailer:", err)
 		return
 	}
@@ -352,7 +369,11 @@ func (m *Model) View() string {
 	widthMinusHelp -= len(helpSep)
 
 	statusBuf := new(bytes.Buffer)
-	m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos, helpView)
+	if m.tape.focus {
+		m.ui.RenderFocusStatus(statusBuf, m.tape, m.statusInfos, helpView)
+	} else {
+		m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos, helpView)
+	}
 
 	footer := lipgloss.JoinHorizontal(
 		lipgloss.Bottom,
@@ -369,9 +390,17 @@ func (m *Model) View() string {
 		m.viewport.Height = max
 	}
 
+	output := m.viewport.View()
+	if output == "\n" {
+		output = ""
+	}
+	if output == "" {
+		return footer
+	}
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		m.viewport.View(),
+		output,
 		footer,
 	)
 }
