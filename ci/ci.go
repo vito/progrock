@@ -1,6 +1,8 @@
 package main
 
-import "dagger.io/dagger"
+import (
+	"dagger.io/dagger"
+)
 
 func main() {
 	dagger.ServeCommands(
@@ -29,13 +31,15 @@ func Test(ctx dagger.Context) (string, error) {
 			"--format=testname",
 			"--no-color=false",
 			"./...",
+		}, dagger.ContainerWithExecOpts{
+			Focus: true,
 		}).
 		// TODO would prefer to just call .Sync here, or nothing at all.
 		Stdout(ctx)
 }
 
 func Biome(ctx dagger.Context) *dagger.Container {
-	return NixImage(ctx, Flake(ctx),
+	return NixImageLayout(ctx, Flake(ctx),
 		"bashInteractive",
 		"go_1_20",
 		"protobuf",

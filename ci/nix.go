@@ -20,10 +20,39 @@ func NixImage(ctx dagger.Context, flake *dagger.Directory, packages ...string) *
 		nixBase(ctx).
 			WithMountedDirectory("/src", drv).
 			WithMountedDirectory("/flake", flake).
+			// TODO: --option filter-syscalls false to let Apple Silicon
+			// cross-compile to Intel
 			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}))
 
 	return ctx.Client().Container().
 		Import(result).
+		WithMountedTemp("/tmp")
+}
+
+func NixImageLayout(ctx dagger.Context, flake *dagger.Directory, packages ...string) *dagger.Container {
+	imageRef := "nixpkgs/" + strings.Join(packages, "/")
+	drv := nixDerivation(ctx, "/flake", imageRef, packages...)
+
+	build :=
+		nixBase(ctx).
+			WithExec([]string{"nix", "profile", "install", "nixpkgs#skopeo"}).
+			WithMountedDirectory("/src", drv).
+			WithMountedDirectory("/flake", flake).
+			WithMountedTemp("/tmp").
+			// TODO: --option filter-syscalls false to let Apple Silicon
+			// cross-compile to Intel
+			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}, dagger.ContainerWithExecOpts{
+				Focus: true,
+			}).
+			WithExec([]string{
+				"skopeo", "--insecure-policy",
+				"copy", "docker-archive:./result", "oci:./layout:latest",
+			}, dagger.ContainerWithExecOpts{
+				Focus: true,
+			})
+
+	return ctx.Client().Container().
+		ImportDir(build.Directory("./layout")).
 		WithMountedTemp("/tmp")
 }
 
