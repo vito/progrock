@@ -328,8 +328,13 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			}
 		}
 
-		if vtx.Internal && !tape.showInternal || tape.focus && !vtx.Focused {
+		if vtx.Internal && !tape.showInternal {
 			// skip internal vertices
+			continue
+		}
+
+		if tape.focus && !vtx.Focused && vtx.Error == nil {
+			// skip non-errored non-focused vertices
 			continue
 		}
 
