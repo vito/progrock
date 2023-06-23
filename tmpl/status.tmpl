@@ -1,25 +1,7 @@
-{{- $x := . -}}
-{{- range .Tape.Vertices -}}
-  {{- if .Internal -}}
-  {{- else if .Cached -}}
-{{- Foreground "4" $x.VertexSymbol -}}
-  {{- else if .Completed -}}
-{{- Foreground "2" $x.VertexSymbol -}}
-  {{- else if .Started -}}
-{{- Foreground "3" $x.Spinner -}}
-  {{- end -}}
-{{- end -}}
-{{- with .Tape.RunningVertex -}}
-  {{- if .Internal -}}
-{{- " " -}} {{- Foreground "8" .Name -}}
-  {{- else -}}
-{{- " " -}} {{- Foreground "3" .Name -}}
-  {{- end -}}
-{{- end -}}
-{{- " " -}}{{.Tape.CompletedCount}}/{{.Tape.TotalCount}}
+{{.Spinner}} Playing ({{.Tape.CompletedCount}}/{{.Tape.TotalCount}})
 {{- range .Infos -}}
 {{- Foreground "8" " • " -}} {{- Bold .Name}}: {{.Value}}
 {{- end -}}
-{{- if .Help -}}
-{{- Foreground "8" " • " -}} {{- .Help -}}
+{{- with .Help -}}
+{{- Foreground "8" " • " -}} {{- . -}}
 {{- end -}}
