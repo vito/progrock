@@ -25,14 +25,12 @@ func Test(ctx dagger.Context) (string, error) {
 	return Biome(ctx).
 		WithMountedDirectory("/src", c.Host().Directory(".")).
 		WithWorkdir("/src").
-		// TODO should mark this 'focused' somehow
+		Focus().
 		WithExec([]string{
 			"gotestsum",
 			"--format=testname",
 			"--no-color=false",
 			"./...",
-		}, dagger.ContainerWithExecOpts{
-			Focus: true,
 		}).
 		// TODO would prefer to just call .Sync here, or nothing at all.
 		Stdout(ctx)

@@ -41,14 +41,11 @@ func NixImageLayout(ctx dagger.Context, flake *dagger.Directory, packages ...str
 			WithMountedTemp("/tmp").
 			// TODO: --option filter-syscalls false to let Apple Silicon
 			// cross-compile to Intel
-			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}, dagger.ContainerWithExecOpts{
-				Focus: true,
-			}).
+			Focus().
+			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}).
 			WithExec([]string{
 				"skopeo", "--insecure-policy",
 				"copy", "docker-archive:./result", "oci:./layout:latest",
-			}, dagger.ContainerWithExecOpts{
-				Focus: true,
 			})
 
 	return ctx.Client().Container().
