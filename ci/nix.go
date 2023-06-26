@@ -60,20 +60,14 @@ func nixBase(ctx dagger.Context) *dagger.Container {
 		From("nixos/nix")
 
 	return base.
-		With(nixCache(c)).
-		WithExec([]string{"sh", "-c", "echo accept-flake-config = true >> /etc/nix/nix.conf"}).
-		WithExec([]string{"sh", "-c", "echo experimental-features = nix-command flakes >> /etc/nix/nix.conf"})
-}
-
-func nixCache(c *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithMountedCache(
+		WithMountedCache(
 			"/nix/store",
 			c.CacheVolume("nix-store"),
 			dagger.ContainerWithMountedCacheOpts{
-				Source: c.Container().From("nixos/nix").Directory("/nix/store"),
-			})
-	}
+				Source: base.Directory("/nix/store"),
+			}).
+		WithExec([]string{"sh", "-c", "echo accept-flake-config = true >> /etc/nix/nix.conf"}).
+		WithExec([]string{"sh", "-c", "echo experimental-features = nix-command flakes >> /etc/nix/nix.conf"})
 }
 
 func nixResult(ctx dagger.Context, ctr *dagger.Container) *dagger.File {
