@@ -12,19 +12,14 @@ func main() {
 }
 
 func Generate(ctx dagger.Context) (*dagger.Directory, error) {
-	c := ctx.Client()
 	return Biome(ctx).
-		WithMountedDirectory("/src", c.Host().Directory(".")).
-		WithWorkdir("/src").
+		Focus().
 		WithExec([]string{"go", "generate", "./..."}).
 		Directory("/src"), nil
 }
 
 func Test(ctx dagger.Context) (string, error) {
-	c := ctx.Client()
 	return Biome(ctx).
-		WithMountedDirectory("/src", c.Host().Directory(".")).
-		WithWorkdir("/src").
 		Focus().
 		WithExec([]string{
 			"gotestsum",
@@ -37,7 +32,7 @@ func Test(ctx dagger.Context) (string, error) {
 }
 
 func Biome(ctx dagger.Context) *dagger.Container {
-	return NixImageLayout(ctx, Flake(ctx),
+	return Nixpkgs(ctx, Flake(ctx),
 		"bashInteractive",
 		"go_1_20",
 		"protobuf",
@@ -47,7 +42,22 @@ func Biome(ctx dagger.Context) *dagger.Container {
 	).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithMountedCache("/go/pkg/mod", ctx.Client().CacheVolume("go-mod")).
-		WithMountedCache("/go/build-cache", ctx.Client().CacheVolume("go-build"))
+		WithMountedCache("/go/build-cache", ctx.Client().CacheVolume("go-build")).
+		WithMountedDirectory("/src", Code(ctx)).
+		WithWorkdir("/src")
+}
+
+func Code(ctx dagger.Context) *dagger.Directory {
+	return ctx.Client().Host().Directory(".", dagger.HostDirectoryOpts{
+		Include: []string{
+			"**/*.go",
+			"**/go.mod",
+			"**/go.sum",
+			"**/testdata/**/*",
+			"**/*.proto",
+			"**/*.tmpl",
+		},
+	})
 }
 
 func Flake(ctx dagger.Context) *dagger.Directory {

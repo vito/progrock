@@ -9,27 +9,7 @@ import (
 	"dagger.io/dagger"
 )
 
-func NixImage(ctx dagger.Context, flake *dagger.Directory, packages ...string) *dagger.Container {
-	// NB: it's tempting to do this, but I've seen cases where order matters.
-	// sort.Strings(packages)
-
-	imageRef := "nixpkgs/" + strings.Join(packages, "/")
-	drv := nixDerivation(ctx, "/flake", imageRef, packages...)
-
-	result := nixResult(ctx,
-		nixBase(ctx).
-			WithMountedDirectory("/src", drv).
-			WithMountedDirectory("/flake", flake).
-			// TODO: --option filter-syscalls false to let Apple Silicon
-			// cross-compile to Intel
-			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}))
-
-	return ctx.Client().Container().
-		Import(result).
-		WithMountedTemp("/tmp")
-}
-
-func NixImageLayout(ctx dagger.Context, flake *dagger.Directory, packages ...string) *dagger.Container {
+func Nixpkgs(ctx dagger.Context, flake *dagger.Directory, packages ...string) *dagger.Container {
 	imageRef := "nixpkgs/" + strings.Join(packages, "/")
 	drv := nixDerivation(ctx, "/flake", imageRef, packages...)
 
@@ -41,7 +21,6 @@ func NixImageLayout(ctx dagger.Context, flake *dagger.Directory, packages ...str
 			WithMountedTemp("/tmp").
 			// TODO: --option filter-syscalls false to let Apple Silicon
 			// cross-compile to Intel
-			Focus().
 			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}).
 			WithExec([]string{
 				"skopeo", "--insecure-policy",
@@ -56,15 +35,14 @@ func NixImageLayout(ctx dagger.Context, flake *dagger.Directory, packages ...str
 func nixBase(ctx dagger.Context) *dagger.Container {
 	c := ctx.Client()
 
-	base := c.Container().
-		From("nixos/nix")
+	base := c.Container().From("nixos/nix")
 
 	return base.
 		WithMountedCache(
-			"/nix/store",
-			c.CacheVolume("nix-store"),
+			"/nix",
+			c.CacheVolume("nix"),
 			dagger.ContainerWithMountedCacheOpts{
-				Source: base.Directory("/nix/store"),
+				Source: base.Directory("/nix"),
 			}).
 		WithExec([]string{"sh", "-c", "echo accept-flake-config = true >> /etc/nix/nix.conf"}).
 		WithExec([]string{"sh", "-c", "echo experimental-features = nix-command flakes >> /etc/nix/nix.conf"})

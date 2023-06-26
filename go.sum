@@ -232,8 +232,8 @@ github.com/vektah/gqlparser/v2 v2.4.0/go.mod h1:flJWIR04IMQPGz+BXLrORkrARBxv/rty
 github.com/vektah/gqlparser/v2 v2.4.5/go.mod h1:flJWIR04IMQPGz+BXLrORkrARBxv/rtyIAFvd/MceW0=
 github.com/vektah/gqlparser/v2 v2.5.1 h1:ZGu+bquAY23jsxDRcYpWjttRZrUz07LbiY77gUOHcr4=
 github.com/vektah/gqlparser/v2 v2.5.1/go.mod h1:mPgqFBu/woKTVYWyNk8cO3kh4S/f4aRFZrvOnp3hmCs=
-github.com/vito/dagger/sdk/go v0.0.0-20230626145938-6db11dc8c364 h1:/Atv3czaIaI8dxWkwcSYvVLY+s7CQ4kkIId7kCZe4cI=
-github.com/vito/dagger/sdk/go v0.0.0-20230626145938-6db11dc8c364/go.mod h1:HNpJPUlBF9UKfuDEHo/fxu7JO9oPJrBFvmcR+6YbAs8=
+github.com/vito/dagger/sdk/go v0.0.0-20230626212641-09a223360e68 h1:pSBMt52JL8LsXC7jedDciOveYiC6sBQ+Xan7tXXVcnU=
+github.com/vito/dagger/sdk/go v0.0.0-20230626212641-09a223360e68/go.mod h1:HNpJPUlBF9UKfuDEHo/fxu7JO9oPJrBFvmcR+6YbAs8=
 github.com/vito/vt100 v0.1.2 h1:gRhKJ/shHTRfMHg+Wc5ExHJzV6HHZqyQIAL52x4EUmA=
 github.com/vito/vt100 v0.1.2/go.mod h1:ByMBsZZEP04RrkT9q/UxvZOjECM8Xc/MRLZ7GLrAUXs=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

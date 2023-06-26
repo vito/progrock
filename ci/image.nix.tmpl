@@ -26,7 +26,7 @@ let
   };
 in
 pkgs.runCommand "write-oci-layout" {
-  nativeBuildInputs = [ pkgs.gzip ];
+  nativeBuildInputs = [ pkgs.pigz ];
 } ''
-  ${stream} | gzip --fast > $out
+  ${stream} | pigz -nT > $out
 ''
