@@ -192,6 +192,9 @@ func (tape *Tape) Vertices() []*Vertex {
 }
 
 func (tape *Tape) RunningVertex() *Vertex {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+
 	for i := len(tape.order) - 1; i >= 0; i-- {
 		vid := tape.order[i]
 		vtx := tape.vertexes[vid]
