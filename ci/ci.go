@@ -7,9 +7,18 @@ import (
 
 func main() {
 	dagger.ServeCommands(
+		BuildDemo,
 		Generate,
 		Test,
 	)
+}
+
+func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
+	return pkgs.GoBuild(ctx, Base(ctx), Code(ctx), pkgs.GoBuildOpts{
+		Packages: []string{"./demo"},
+		Static:   true,
+		Subdir:   "demo",
+	}), nil
 }
 
 func Generate(ctx dagger.Context) (*dagger.Directory, error) {

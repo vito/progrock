@@ -27,6 +27,10 @@ type GoBuildOpts struct {
 	// Packages to build.
 	Packages []string
 
+	// Optional subdirectory in which to place the built
+	// artifacts.
+	Subdir string
+
 	// -X definitions to pass to go build -ldflags.
 	Xdefs []string
 
@@ -79,11 +83,19 @@ func GoBuild(ctx dagger.Context, base *dagger.Container, src *dagger.Directory, 
 
 	cmd = append(cmd, opts.Packages...)
 
-	return ctr.
+	out := ctr.
 		Focus().
 		WithExec(cmd).
 		Unfocus().
 		Directory("/out")
+
+	if opts.Subdir != "" {
+		out = ctx.Client().
+			Directory().
+			WithDirectory(opts.Subdir, out)
+	}
+
+	return out
 }
 
 type GoTestOpts struct {
