@@ -27,7 +27,7 @@ func Alpine(ctx dagger.Context, packages []string, opts_ ...ApkoOpts) *dagger.Co
 		"repositories": []string{
 			"https://dl-cdn.alpinelinux.org/alpine/edge/main",
 		},
-		"packages": packages,
+		"packages": append([]string{"alpine-base"}, packages...),
 	}
 	return apko(ctx, ic)
 }
@@ -41,7 +41,7 @@ func Wolfi(ctx dagger.Context, packages []string, opts_ ...ApkoOpts) *dagger.Con
 		"keyring": []string{
 			"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
 		},
-		"packages": packages,
+		"packages": append([]string{"wolfi-base"}, packages...),
 	}
 	return apko(ctx, ic)
 }
