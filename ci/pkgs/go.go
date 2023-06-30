@@ -9,9 +9,10 @@ import (
 func GoCache(ctx dagger.Context) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithEnvVariable("GOCACHE", "/go/build-cache").
 			WithMountedCache("/go/pkg/mod", ctx.Client().CacheVolume("go-mod")).
-			WithMountedCache("/go/build-cache", ctx.Client().CacheVolume("go-build"))
+			WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+			WithMountedCache("/go/build-cache", ctx.Client().CacheVolume("go-build")).
+			WithEnvVariable("GOCACHE", "/go/build-cache")
 	}
 }
 
