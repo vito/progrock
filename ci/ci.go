@@ -2,6 +2,7 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"github.com/vito/progrock/ci/pkgs"
 )
 
 func main() {
@@ -12,39 +13,24 @@ func main() {
 }
 
 func Generate(ctx dagger.Context) (*dagger.Directory, error) {
-	return Biome(ctx).
-		Focus().
-		WithExec([]string{"go", "generate", "./..."}).
-		Directory("/src"), nil
+	return pkgs.GoGenerate(ctx, Base(ctx), Code(ctx)), nil
 }
 
 func Test(ctx dagger.Context) (string, error) {
-	return Biome(ctx).
-		Focus().
-		WithExec([]string{
-			"gotestsum",
-			"--format=testname",
-			"--no-color=false",
-			"./...",
-		}).
-		// TODO would prefer to just call .Sync here, or nothing at all.
-		Stdout(ctx)
+	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
 
-func Biome(ctx dagger.Context) *dagger.Container {
-	return Nixpkgs(ctx, Flake(ctx),
-		"bashInteractive",
-		"go_1_20",
-		"protobuf",
+func Base(ctx dagger.Context) *dagger.Container {
+	return pkgs.Wolfi(ctx, []string{
+		"go",
+		"protobuf-dev", // for google/protobuf/*.proto
+		"protoc",
 		"protoc-gen-go",
 		"protoc-gen-go-grpc",
-		"gotestsum",
-	).
-		WithEnvVariable("GOCACHE", "/go/build-cache").
-		WithMountedCache("/go/pkg/mod", ctx.Client().CacheVolume("go-mod")).
-		WithMountedCache("/go/build-cache", ctx.Client().CacheVolume("go-build")).
-		WithMountedDirectory("/src", Code(ctx)).
-		WithWorkdir("/src")
+		"rust",
+	}).
+		With(pkgs.GoBin).
+		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
 }
 
 func Code(ctx dagger.Context) *dagger.Directory {
@@ -57,12 +43,8 @@ func Code(ctx dagger.Context) *dagger.Directory {
 			"**/*.proto",
 			"**/*.tmpl",
 		},
-	})
-}
-
-func Flake(ctx dagger.Context) *dagger.Directory {
-	return ctx.Client().Host().Directory(".", dagger.HostDirectoryOpts{
-		// NB: maintain this as-needed, in case the Nix code sprawls
-		Include: []string{"flake.nix", "flake.lock"},
+		Exclude: []string{
+			"ci/**/*",
+		},
 	})
 }

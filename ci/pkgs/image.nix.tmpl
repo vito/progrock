@@ -1,7 +1,5 @@
 let
-  flake = builtins.getFlake "{{.FlakeRef}}";
-  inputs = flake.inputs;
-  pkgs = import inputs.nixpkgs {};
+  pkgs = import {{.FlakeRef}} {};
   fhs = (pkgs.callPackage <nixpkgs/pkgs/build-support/build-fhs-userenv/env.nix> {}) {
     name = "container-fhs";
     targetPkgs = pkgs: with pkgs; [
