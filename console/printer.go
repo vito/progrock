@@ -283,10 +283,10 @@ func (p *textMux) print(t *trace) {
 		}
 		tm := now.Sub(*v.lastBlockTime)
 		speed := float64(v.updates) / tm.Seconds()
-		overLimit := tm > MaxDelay && id != current
-		stats[id] = &vtxStat{blockTime: tm, speed: speed, overLimit: overLimit}
+		reveal := (tm > MaxDelay || v.GetFocused()) && id != current
+		stats[id] = &vtxStat{blockTime: tm, speed: speed, reveal: reveal}
 		sum += speed
-		if overLimit || max == "" || stats[max].speed < speed {
+		if reveal || max == "" || stats[max].speed < speed {
 			max = id
 		}
 	}
@@ -301,7 +301,7 @@ func (p *textMux) print(t *trace) {
 
 	// show items that were hidden
 	for dgst := range rest {
-		if stats[dgst].overLimit {
+		if stats[dgst].reveal {
 			p.printVtx(t, dgst)
 			return
 		}
@@ -318,7 +318,7 @@ type vtxStat struct {
 	blockTime time.Duration
 	speed     float64
 	share     float64
-	overLimit bool
+	reveal    bool
 }
 
 func limitString(s string, l int) string {
