@@ -45,7 +45,7 @@ func (w *RPCWriter) Close() error {
 }
 
 type RPCReceiver struct {
-	w Writer
+	W Writer
 
 	UnimplementedProgressServiceServer
 }
@@ -59,7 +59,7 @@ func (recv *RPCReceiver) WriteUpdates(srv ProgressService_WriteUpdatesServer) er
 			}
 			return err
 		}
-		if err := recv.w.WriteStatus(update); err != nil {
+		if err := recv.W.WriteStatus(update); err != nil {
 			return err
 		}
 	}
@@ -67,7 +67,7 @@ func (recv *RPCReceiver) WriteUpdates(srv ProgressService_WriteUpdatesServer) er
 
 func ServeRPC(l net.Listener, w Writer) (Writer, error) {
 	recv := &RPCReceiver{
-		w: w,
+		W: w,
 	}
 
 	srv := grpc.NewServer()
