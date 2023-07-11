@@ -20,18 +20,16 @@ func Nixpkgs(ctx dagger.Context, nixpkgs *dagger.Directory, packages ...string) 
 			WithMountedDirectory("/src", drv).
 			WithMountedDirectory("/flake", nixpkgs).
 			WithMountedTemp("/tmp").
-			WithFocus().
 			// TODO: --option filter-syscalls false to let Apple Silicon
 			// cross-compile to Intel
 			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}).
+			// TODO: Container.file/Directory.file should follow symlinks
 			WithExec([]string{
-				"skopeo", "--insecure-policy",
-				"copy", "docker-archive:./result", "oci:./layout:latest",
-			}).
-			WithoutFocus()
+				"cp", "-L", "./result", "./layout.tar",
+			})
 
 	return ctx.Client().Container().
-		ImportDir(build.Directory("./layout")).
+		Import(build.File("./layout.tar")).
 		WithMountedTemp("/tmp")
 }
 

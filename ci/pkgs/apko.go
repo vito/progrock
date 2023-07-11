@@ -55,35 +55,23 @@ func apko(ctx dagger.Context, ic any) *dagger.Container {
 	configDir := ctx.Client().Directory().
 		WithNewFile("config.yml", string(config))
 
-	fork := ctx.Client().
-		Git("https://github.com/vito/apko").
-		Branch("oci-layout").
-		Tree()
-
-	// TODO: until layout dir support is merged upstream:
-	// https://github.com/chainguard-dev/apko/pull/769
 	apko := ctx.Client().
 		Container().
-		From("golang:alpine").
-		With(GoCache(ctx)).
-		WithMountedDirectory("/apko", fork).
-		WithExec([]string{"go", "install", "-C", "/apko", "."}).
-		WithEntrypoint([]string{"apko"})
+		From("cgr.dev/chainguard/apko")
 
 	layout := apko.
 		WithMountedFile("/config.yml", configDir.File("config.yml")).
 		WithDirectory("/layout", ctx.Client().Directory()).
 		WithMountedCache("/apkache", ctx.Client().CacheVolume("apko")).
-		WithFocus().
 		WithExec([]string{
 			"build",
 			"--debug",
 			"--cache-dir", "/apkache",
 			"/config.yml",
 			"latest",
-			"/layout",
+			"/layout.tar",
 		}).
-		Directory("/layout")
+		File("/layout.tar")
 
-	return ctx.Client().Container().ImportDir(layout)
+	return ctx.Client().Container().Import(layout)
 }

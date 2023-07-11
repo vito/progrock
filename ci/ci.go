@@ -6,11 +6,13 @@ import (
 )
 
 func main() {
-	dagger.ServeCommands(
-		BuildDemo,
-		Generate,
-		Test,
-	)
+	ctx := dagger.DefaultContext()
+	ctx.Client().Environment().
+		WITHCommand(Entrypoints.Test).
+		Serve(ctx)
+}
+
+type Entrypoints struct {
 }
 
 func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
@@ -25,7 +27,7 @@ func Generate(ctx dagger.Context) (*dagger.Directory, error) {
 	return pkgs.GoGenerate(ctx, Base(ctx), Code(ctx)), nil
 }
 
-func Test(ctx dagger.Context) (string, error) {
+func (Entrypoints) Test(ctx dagger.Context) (string, error) {
 	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
 
@@ -36,7 +38,6 @@ func Base(ctx dagger.Context) *dagger.Container {
 		"protoc",
 		"protoc-gen-go",
 		"protoc-gen-go-grpc",
-		"rust",
 	}).
 		With(pkgs.GoBin).
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
