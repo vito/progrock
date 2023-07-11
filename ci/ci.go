@@ -8,11 +8,10 @@ import (
 func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
-		WITHCommand(Entrypoints.Test).
+		WITHCommand(Generate).
+		WITHCommand(Test).
+		WITHCommand(BuildDemo).
 		Serve(ctx)
-}
-
-type Entrypoints struct {
 }
 
 func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
@@ -27,7 +26,7 @@ func Generate(ctx dagger.Context) (*dagger.Directory, error) {
 	return pkgs.GoGenerate(ctx, Base(ctx), Code(ctx)), nil
 }
 
-func (Entrypoints) Test(ctx dagger.Context) (string, error) {
+func Test(ctx dagger.Context) (string, error) {
 	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
 
