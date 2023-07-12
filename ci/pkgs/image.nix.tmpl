@@ -21,10 +21,14 @@ let
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       ];
     };
+    # lots of things assume /tmp is there, and apko images seem to add it
+    # automatically, so let's make sure nix images have it too
+    extraCommands = ''
+      mkdir -p tmp
+      chmod 0777 tmp
+    '';
   };
 in
-pkgs.runCommand "write-oci-layout" {
-  nativeBuildInputs = [ pkgs.pigz ];
-} ''
-  ${stream} | pigz -nT > $out
+pkgs.runCommand "write-docker-tar" {} ''
+  ${stream} > $out
 ''

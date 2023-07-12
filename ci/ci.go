@@ -30,14 +30,32 @@ func Test(ctx dagger.Context) (string, error) {
 	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
 
+var Wolfi = true
+
 func Base(ctx dagger.Context) *dagger.Container {
-	return pkgs.Wolfi(ctx, []string{
-		"go",
-		"protobuf-dev", // for google/protobuf/*.proto
-		"protoc",
-		"protoc-gen-go",
-		"protoc-gen-go-grpc",
-	}).
+	var base *dagger.Container
+	if Wolfi {
+		base = pkgs.Wolfi(ctx, []string{
+			"go",
+			"protobuf-dev", // for google/protobuf/*.proto
+			"protoc",
+			"protoc-gen-go",
+			"protoc-gen-go-grpc",
+		})
+	} else {
+		base = pkgs.Nixpkgs(ctx,
+			ctx.Client(). // TODO: it'd be great to memoize this
+					Git("https://github.com/nixos/nixpkgs").
+					Branch("nixos-unstable").
+					Tree(),
+			"go",
+			"protobuf", // for google/protobuf/*.proto
+			"protoc-gen-go",
+			"protoc-gen-go-grpc",
+		)
+	}
+
+	return base.
 		With(pkgs.GoBin).
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
 }

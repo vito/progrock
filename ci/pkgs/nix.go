@@ -13,24 +13,21 @@ import (
 func Nixpkgs(ctx dagger.Context, nixpkgs *dagger.Directory, packages ...string) *dagger.Container {
 	imageRef := "nixpkgs/" + strings.Join(packages, "/")
 	drv := nixDerivation(ctx, "/flake", imageRef, packages...)
-
-	build :=
+	return ctx.Client().Container().Import(
 		nixBase(ctx).
-			WithExec([]string{"nix", "profile", "install", "nixpkgs#skopeo"}).
 			WithMountedDirectory("/src", drv).
 			WithMountedDirectory("/flake", nixpkgs).
 			WithMountedTemp("/tmp").
 			// TODO: --option filter-syscalls false to let Apple Silicon
 			// cross-compile to Intel
+			WithFocus().
 			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}).
 			// TODO: Container.file/Directory.file should follow symlinks
 			WithExec([]string{
 				"cp", "-L", "./result", "./layout.tar",
-			})
-
-	return ctx.Client().Container().
-		Import(build.File("./layout.tar")).
-		WithMountedTemp("/tmp")
+			}).
+			File("./layout.tar"),
+	)
 }
 
 type Artifact struct {
