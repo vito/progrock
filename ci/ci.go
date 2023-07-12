@@ -8,9 +8,9 @@ import (
 func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
-		WITHCommand(Generate).
-		WITHCommand(Test).
-		WITHCommand(BuildDemo).
+		WithCommand_(Generate).
+		WithCommand_(Test).
+		WithCommand_(BuildDemo).
 		Serve(ctx)
 }
 

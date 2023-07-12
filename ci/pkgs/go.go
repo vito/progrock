@@ -131,7 +131,9 @@ func GoTest(
 		With(GoCache(ctx)).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
-		WithExec(cmd)
+		WithFocus().
+		WithExec(cmd).
+		WithoutFocus()
 }
 
 type GotestsumOpts struct {
@@ -177,7 +179,9 @@ func Gotestsum(
 		With(GoCache(ctx)).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
-		WithExec(cmd)
+		WithFocus().
+		WithExec(cmd).
+		WithoutFocus()
 }
 
 func GoGenerate(
@@ -188,6 +192,8 @@ func GoGenerate(
 	return base.
 		With(GoCache(ctx)).
 		With(Cd("/src", src)).
+		WithFocus().
 		WithExec([]string{"go", "generate", "./..."}).
+		WithoutFocus().
 		Directory("/src")
 }
