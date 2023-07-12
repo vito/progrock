@@ -331,20 +331,14 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			}
 		}
 
-		if vtx.Internal && !tape.showInternal {
-			// skip internal vertices
-			continue
-		}
-
-		if tape.focus && !vtx.Focused && vtx.Error == nil {
-			// skip non-errored non-focused vertices
-			continue
-		}
-
 		groups = groups.Reap(groupsW, u, order[i:])
 
 		for _, g := range b.Groups(vtx) {
 			groups = groups.AddGroup(groupsW, u, b, g, tape.debug)
+		}
+
+		if tape.filteredOut(vtx) {
+			continue
 		}
 
 		symbol := block
@@ -419,6 +413,25 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	fmt.Fprint(w, tape.debug.View())
 
 	return nil
+}
+
+func (tape *Tape) filteredOut(vtx *Vertex) bool {
+	if vtx.Error != nil {
+		// as a rule, always show errored vertices
+		return false
+	}
+
+	if vtx.Internal && !tape.showInternal {
+		// skip internal vertices
+		return true
+	}
+
+	if tape.focus && !vtx.Focused {
+		// skip non-errored non-focused vertices
+		return true
+	}
+
+	return false
 }
 
 func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
