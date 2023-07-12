@@ -205,6 +205,42 @@ func (tape *Tape) RunningVertex() *Vertex {
 	return nil
 }
 
+type VertexActivity struct {
+	LastLine        string
+	TasksCompleted  int64
+	TasksTotal      int64
+	TaskBarsCurrent int64
+	TaskBarsTotal   int64
+}
+
+func (tape *Tape) Activity(vtx *Vertex) VertexActivity {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+
+	var activity VertexActivity
+
+	term := tape.logs[vtx.Id]
+	if term != nil {
+		activity.LastLine = term.LastLine()
+	}
+
+	tasks := tape.tasks[vtx.Id]
+	for _, task := range tasks {
+		activity.TasksTotal++
+
+		if task.Completed != nil {
+			activity.TasksCompleted++
+		} else if task.Started != nil && activity.LastLine == "" {
+			activity.LastLine = task.GetName()
+		}
+
+		activity.TaskBarsTotal += task.GetTotal()
+		activity.TaskBarsCurrent += task.GetCurrent()
+	}
+
+	return activity
+}
+
 // CompletedCount returns the number of completed vertexes.
 func (tape *Tape) CompletedCount() int {
 	tape.l.Lock()

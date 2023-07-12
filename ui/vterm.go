@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -176,6 +177,42 @@ func (term *Vterm) Bytes(offset, height int) []byte {
 	}
 
 	return buf.Bytes()
+}
+
+// LastLine returns the last line of visible text, with ANSI formatting, but
+// without any trailing whitespace.
+func (term *Vterm) LastLine() string {
+	used := term.vt.UsedHeight()
+	if used == 0 {
+		return ""
+	}
+
+	var lastLine string
+	for row := used - 1; row >= 0; row-- {
+		var lastFormat vt100.Format
+
+		buf := new(strings.Builder)
+		for col, r := range term.vt.Content[row] {
+			f := term.vt.Format[row][col]
+
+			if f != lastFormat {
+				lastFormat = f
+				buf.Write([]byte(renderFormat(f)))
+			}
+
+			buf.Write([]byte(string(r)))
+		}
+
+		if strings.TrimSpace(buf.String()) == "" {
+			continue
+		}
+
+		lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
+
+		break
+	}
+
+	return lastLine + reset
 }
 
 // Print prints the full log output without any formatting.
