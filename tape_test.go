@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/sebdah/goldie/v2"
@@ -13,6 +14,18 @@ import (
 )
 
 var ui = progrock.DefaultUI()
+
+func TestSlow(t *testing.T) {
+	t.Parallel()
+	for i := 0; i < 10; i++ {
+		i := i
+		t.Run(fmt.Sprintf("test %d", i), func(t *testing.T) {
+			t.Parallel()
+			time.Sleep(time.Duration(i*100) * time.Millisecond)
+			t.Fail()
+		})
+	}
+}
 
 func TestEmpty(t *testing.T) {
 	tape := progrock.NewTape()

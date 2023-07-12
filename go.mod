@@ -56,4 +56,4 @@ require (
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 )
 
-replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230712005704-9b7c18f19845
+replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230712190915-9ecab428c224

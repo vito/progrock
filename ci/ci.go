@@ -9,7 +9,7 @@ func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
 		WithCommand_(Generate).
-		WithCommand_(Test).
+		WithCheck_(Unit).
 		WithCommand_(BuildDemo).
 		Serve(ctx)
 }
@@ -26,7 +26,7 @@ func Generate(ctx dagger.Context) (*dagger.Directory, error) {
 	return pkgs.GoGenerate(ctx, Base(ctx), Code(ctx)), nil
 }
 
-func Test(ctx dagger.Context) (string, error) {
+func Unit(ctx dagger.Context) (string, error) {
 	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
 
