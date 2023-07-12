@@ -390,10 +390,9 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 				term.SetHeight(tape.termHeight)
 			}
 
-			buf := new(bytes.Buffer)
-			groups.TermPrefix(buf, u, vtx)
-
 			if !tape.focus {
+				buf := new(bytes.Buffer)
+				groups.TermPrefix(buf, u, vtx)
 				term.SetPrefix(buf.String())
 			}
 
