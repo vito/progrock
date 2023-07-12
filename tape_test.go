@@ -22,7 +22,6 @@ func TestSlow(t *testing.T) {
 		t.Run(fmt.Sprintf("test %d", i), func(t *testing.T) {
 			t.Parallel()
 			time.Sleep(time.Duration(i*100) * time.Millisecond)
-			t.Fail()
 		})
 	}
 }

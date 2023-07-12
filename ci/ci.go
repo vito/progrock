@@ -2,20 +2,22 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"github.com/vito/progrock/ci/pkgs"
+	"github.com/dagger/dagger/universe/apkoenv"
+	"github.com/dagger/dagger/universe/goenv"
+	"github.com/dagger/dagger/universe/nixenv"
 )
 
 func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
-		WithCommand_(Generate).
 		WithCheck_(Unit).
+		WithCommand_(Generate).
 		WithCommand_(BuildDemo).
 		Serve(ctx)
 }
 
 func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
-	return pkgs.GoBuild(ctx, Base(ctx), Code(ctx), pkgs.GoBuildOpts{
+	return goenv.Build(ctx, Base(ctx), Code(ctx), goenv.GoBuildOpts{
 		Packages: []string{"./demo"},
 		Static:   true,
 		Subdir:   "demo",
@@ -23,11 +25,11 @@ func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
 }
 
 func Generate(ctx dagger.Context) (*dagger.Directory, error) {
-	return pkgs.GoGenerate(ctx, Base(ctx), Code(ctx)), nil
+	return goenv.Generate(ctx, Base(ctx), Code(ctx)), nil
 }
 
 func Unit(ctx dagger.Context) (string, error) {
-	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
+	return goenv.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
 
 var Wolfi = true
@@ -35,7 +37,7 @@ var Wolfi = true
 func Base(ctx dagger.Context) *dagger.Container {
 	var base *dagger.Container
 	if Wolfi {
-		base = pkgs.Wolfi(ctx, []string{
+		base = apkoenv.Wolfi(ctx, []string{
 			"go",
 			"protobuf-dev", // for google/protobuf/*.proto
 			"protoc",
@@ -43,7 +45,7 @@ func Base(ctx dagger.Context) *dagger.Container {
 			"protoc-gen-go-grpc",
 		})
 	} else {
-		base = pkgs.Nixpkgs(ctx,
+		base = nixenv.Nixpkgs(ctx,
 			ctx.Client(). // TODO: it'd be great to memoize this
 					Git("https://github.com/nixos/nixpkgs").
 					Branch("nixos-unstable").
@@ -56,7 +58,7 @@ func Base(ctx dagger.Context) *dagger.Container {
 	}
 
 	return base.
-		With(pkgs.GoBin).
+		With(goenv.BinPath).
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
 }
 
