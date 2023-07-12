@@ -416,18 +416,19 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 }
 
 func (tape *Tape) filteredOut(vtx *Vertex) bool {
-	if vtx.Error != nil {
-		// as a rule, always show errored vertices
-		return false
-	}
-
 	if vtx.Internal && !tape.showInternal {
-		// skip internal vertices
+		// filter out internal vertices unless we're showing them
 		return true
 	}
 
+	if vtx.Error != nil {
+		// in general, show errored vertexes, except internal ones since they may
+		// already be captured and presented in a nicer manner instead
+		return false
+	}
+
 	if tape.focus && !vtx.Focused {
-		// skip non-errored non-focused vertices
+		// if we're focusing, ignore unfocused vertices
 		return true
 	}
 

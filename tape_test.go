@@ -275,6 +275,15 @@ func TestInternal(t *testing.T) {
 	})
 }
 
+func TestInternalErrored(t *testing.T) {
+	tape := progrock.NewTape()
+
+	recorder := progrock.NewRecorder(tape)
+	runningVtx(recorder, "a", "vertex a", progrock.Internal()).Done(fmt.Errorf("nope"))
+
+	testGolden(t, tape)
+}
+
 func TestSingleDoneTasks(t *testing.T) {
 	tape := progrock.NewTape()
 
