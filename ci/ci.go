@@ -11,11 +11,13 @@ func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
 		WithCheck_(Unit).
+		WithCheck_(Lint).
 		WithCommand_(Generate).
 		WithCommand_(BuildDemo).
 		Serve(ctx)
 }
 
+// BuildDemo builds the demo binary.
 func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
 	return goenv.Build(ctx, Base(ctx), Code(ctx), goenv.GoBuildOpts{
 		Packages: []string{"./demo"},
@@ -24,10 +26,17 @@ func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
 	}), nil
 }
 
+// Lint runs golangci-lint against all Go code.
+func Lint(ctx dagger.Context) (string, error) {
+	return goenv.GolangCILint(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
+}
+
+// Generate runs go generate against all Go code.
 func Generate(ctx dagger.Context) (*dagger.Directory, error) {
 	return goenv.Generate(ctx, Base(ctx), Code(ctx)), nil
 }
 
+// Unit runs all unit tests.
 func Unit(ctx dagger.Context) (string, error) {
 	return goenv.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
 }
@@ -43,6 +52,7 @@ func Base(ctx dagger.Context) *dagger.Container {
 			"protoc",
 			"protoc-gen-go",
 			"protoc-gen-go-grpc",
+			"golangci-lint",
 		})
 	} else {
 		base = nixenv.Nixpkgs(ctx,
@@ -54,6 +64,7 @@ func Base(ctx dagger.Context) *dagger.Container {
 			"protobuf", // for google/protobuf/*.proto
 			"protoc-gen-go",
 			"protoc-gen-go-grpc",
+			"golangci-lint",
 		)
 	}
 

@@ -57,6 +57,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230712225502-336f428abfae
+replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230713012757-685d8b7011ae
 
-replace github.com/dagger/dagger => github.com/vito/dagger v0.0.0-20230712225502-336f428abfae
+replace github.com/dagger/dagger => github.com/vito/dagger v0.0.0-20230713012757-685d8b7011ae
