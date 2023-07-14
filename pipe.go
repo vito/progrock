@@ -3,6 +3,9 @@ package progrock
 import (
 	"errors"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func Pipe() (Reader, Writer) {
@@ -44,6 +47,12 @@ func (p *unboundedPipe) ReadStatus() (*StatusUpdate, bool) {
 	}
 
 	value := p.buffer[0]
+
+	if value.Received == nil {
+		value = proto.Clone(value).(*StatusUpdate)
+		value.Received = timestamppb.New(Clock.Now())
+	}
+
 	p.buffer = p.buffer[1:]
 	return value, true
 }

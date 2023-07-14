@@ -47,9 +47,15 @@ func newEmptyRecorder(w Writer) *Recorder {
 
 // Record sends a deep-copy of the status update to the Writer.
 func (recorder *Recorder) Record(status *StatusUpdate) error {
+	clone := proto.Clone(status).(*StatusUpdate)
+
+	if clone.Sent == nil { // normally this isn't set, but respect if present
+		clone.Sent = timestamppb.New(Clock.Now())
+	}
+
 	// perform a deep-copy so buffered writes don't get mutated, similar to
 	// copying in Write([]byte) when []byte comes from sync.Pool
-	return recorder.w.WriteStatus(proto.Clone(status).(*StatusUpdate))
+	return recorder.w.WriteStatus(clone)
 }
 
 // GroupOpt is an option for creating a Group.

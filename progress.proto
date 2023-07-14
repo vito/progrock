@@ -20,6 +20,10 @@ message StatusUpdate {
   repeated Membership memberships = 5;
   // Messages contains global messages to show to the user.
   repeated Message messages = 6;
+  // Sent is an optional timestamp that the status update was emitted.
+  optional google.protobuf.Timestamp sent = 7;
+  // Received is an optional timestamp that the status update was received.
+  optional google.protobuf.Timestamp received = 8;
 };
 
 // Membership declares a set of vertexes to be members of a group.
