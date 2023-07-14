@@ -44,7 +44,11 @@ type Tape struct {
 	showAllOutput bool // show output even for completed vertexes
 	focus         bool // only show 'focused' vertex output, condensing the rest
 
-	debug *ui.Vterm
+	// output from messages and internal debugging
+	globalLogs *ui.Vterm
+
+	// minimum message level to display to the user
+	messageLevel MessageLevel
 
 	l sync.Mutex
 }
@@ -97,7 +101,9 @@ func NewTape() *Tape {
 		// sane default before window size is known
 		termHeight: 10,
 
-		debug: ui.NewVterm(),
+		globalLogs: ui.NewVterm(),
+
+		messageLevel: MessageLevel_WARNING,
 	}
 }
 
@@ -170,7 +176,37 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		}
 	}
 
+	for _, msg := range status.Messages {
+		tape.log(msg)
+	}
+
 	return nil
+}
+
+func (tape *Tape) log(msg *Message) {
+	if msg.Level < tape.messageLevel {
+		return
+	}
+
+	var prefix termenv.Style
+	switch msg.Level {
+	case MessageLevel_DEBUG:
+		prefix = termenv.String("DEBUG:").Foreground(termenv.ANSIBlue).Bold()
+	case MessageLevel_WARNING:
+		prefix = termenv.String("WARNING:").Foreground(termenv.ANSIYellow).Bold()
+	case MessageLevel_ERROR:
+		prefix = termenv.String("ERROR:").Foreground(termenv.ANSIRed).Bold()
+	}
+
+	out := msg.Message
+	for _, l := range msg.Labels {
+		out += " "
+		out += termenv.String(fmt.Sprintf("%s=%q", l.Name, l.Value)).
+			Foreground(termenv.ANSIBrightBlack).
+			String()
+	}
+
+	fmt.Fprintln(tape.globalLogs, prefix, out)
 }
 
 func (tape *Tape) Vertices() []*Vertex {
@@ -299,6 +335,13 @@ func (tape *Tape) Focus(focused bool) {
 	tape.focus = focused
 }
 
+// MessageLevel sets the minimum level for messages to display.
+func (tape *Tape) MessageLevel(level MessageLevel) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.messageLevel = level
+}
+
 // SetWindowSize sets the size of the terminal UI, which influences the
 // dimensions for vertex logs, progress bars, etc.
 func (tape *Tape) SetWindowSize(w, h int) {
@@ -309,7 +352,7 @@ func (tape *Tape) SetWindowSize(w, h int) {
 	for _, l := range tape.logs {
 		l.SetWidth(w)
 	}
-	tape.debug.SetWidth(w)
+	tape.globalLogs.SetWidth(w)
 	tape.l.Unlock()
 }
 
@@ -370,7 +413,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 		groups = groups.Reap(groupsW, u, order[i:])
 
 		for _, g := range b.Groups(vtx) {
-			groups = groups.AddGroup(groupsW, u, b, g, tape.debug)
+			groups = groups.AddGroup(groupsW, u, b, g, tape.log)
 		}
 
 		if tape.filteredOut(vtx) {
@@ -382,7 +425,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
 
-		groups.VertexPrefix(groupsW, u, vtx, symbol, tape.debug)
+		groups.VertexPrefix(groupsW, u, vtx, symbol, tape.log)
 		if err := u.RenderVertex(w, vtx); err != nil {
 			return err
 		}
@@ -444,8 +487,8 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 	groups.Reap(groupsW, u, nil)
 
-	tape.debug.SetHeight(10)
-	fmt.Fprint(w, tape.debug.View())
+	tape.globalLogs.SetHeight(10)
+	fmt.Fprint(w, tape.globalLogs.View())
 
 	return nil
 }
@@ -707,7 +750,7 @@ func (vg vertexGroup) WitnessedAll() bool {
 }
 
 // AddVertex adds a group to the set of groups. It also renders the new groups.
-func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Group, debug io.Writer) progressGroups {
+func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Group, log func(*Message)) progressGroups {
 	pg := progGroup{group, b}
 
 	if len(groups) == 0 && group.Name == RootGroup {
@@ -731,12 +774,19 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Gro
 	if parentIdx == -1 && group.Parent != nil {
 		parent, found := b.Parent(group)
 		if !found {
-			fmt.Fprintln(debug, "group", group.Id, "has unknown parent:", group.GetParent())
+			log(&Message{
+				Level:   MessageLevel_DEBUG,
+				Message: "group has unknown parent",
+				Labels: []*Label{
+					{Name: "group", Value: group.Id},
+					{Name: "parent", Value: group.GetParent()},
+				},
+			})
 			return groups
 		}
 
-		return groups.AddGroup(w, u, b, parent, debug).
-			AddGroup(w, u, b, group, debug)
+		return groups.AddGroup(w, u, b, parent, log).
+			AddGroup(w, u, b, group, log)
 	}
 
 	var added bool
@@ -894,7 +944,7 @@ func (groups progressGroups) AddVertex(w io.Writer, u *UI, allGroups map[string]
 }
 
 // VertexPrefix prints the prefix for a vertex.
-func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string, debug io.Writer) {
+func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string, log func(*Message)) {
 	var firstParentIdx = -1
 	var lastParentIdx = -1
 	var vtxIdx = -1
@@ -916,7 +966,14 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 	}
 
 	if vtxIdx == -1 {
-		fmt.Fprintln(debug, "vertex has no containing group?", vtx)
+		log(&Message{
+			Level:   MessageLevel_DEBUG,
+			Message: "vertex has no containing group",
+			Labels: []*Label{
+				{Name: "vertex", Value: vtx.Id},
+				{Name: "name", Value: vtx.Name},
+			},
+		})
 	}
 
 	for i, g := range groups {

@@ -607,6 +607,41 @@ func TestAutoResize(t *testing.T) {
 	})
 }
 
+func TestMessages(t *testing.T) {
+	t.Run("debug messages are not shown by default", func(t *testing.T) {
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Debug("hello")
+		testGolden(t, tape)
+	})
+
+	t.Run("debug messages are not shown if level is set", func(t *testing.T) {
+		tape := progrock.NewTape()
+		tape.MessageLevel(progrock.MessageLevel_DEBUG)
+		recorder := progrock.NewRecorder(tape)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Debug("hello")
+		testGolden(t, tape)
+	})
+
+	t.Run("warnings are shown by default", func(t *testing.T) {
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Warn("uh oh")
+		testGolden(t, tape)
+	})
+
+	t.Run("errors are shown by default", func(t *testing.T) {
+		tape := progrock.NewTape()
+		recorder := progrock.NewRecorder(tape)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Error("oh no")
+		testGolden(t, tape)
+	})
+}
+
 func testGolden(t *testing.T, tape *progrock.Tape) {
 	buf := new(bytes.Buffer)
 	tape.SetWindowSize(80, 24)

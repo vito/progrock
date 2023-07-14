@@ -58,6 +58,63 @@ func (recorder *Recorder) Record(status *StatusUpdate) error {
 	return recorder.w.WriteStatus(clone)
 }
 
+// MessageOpt is an option for creating a Message.
+type MessageOpt func(*Message)
+
+// WithMessageLevel sets the message level.
+func WithMessageLevel(level MessageLevel) MessageOpt {
+	return func(m *Message) {
+		m.Level = level
+	}
+}
+
+// WithMessageCode sets the message code.
+func WithMessageCode(code string) MessageOpt {
+	return func(m *Message) {
+		m.Code = &code
+	}
+}
+
+// WithMessageLabels sets the message labels.
+func WithMessageLabels(labels ...*Label) MessageOpt {
+	return func(m *Message) {
+		m.Labels = append(m.Labels, labels...)
+	}
+}
+
+// Debug sends a progress update with a debug-level message.
+func (recorder *Recorder) Debug(msg string, opts ...MessageOpt) {
+	opts = append(opts, WithMessageLevel(MessageLevel_DEBUG))
+	recorder.message(msg, opts...)
+}
+
+// Warn sends a progress update with a warning-level message.
+func (recorder *Recorder) Warn(msg string, opts ...MessageOpt) {
+	opts = append(opts, WithMessageLevel(MessageLevel_WARNING))
+	recorder.message(msg, opts...)
+}
+
+// Warn sends a progress update with an error-level message.
+func (recorder *Recorder) Error(msg string, opts ...MessageOpt) {
+	opts = append(opts, WithMessageLevel(MessageLevel_ERROR))
+	recorder.message(msg, opts...)
+}
+
+// message sends a progress update with a message.
+func (recorder *Recorder) message(msg string, opts ...MessageOpt) {
+	message := &Message{
+		Message: msg,
+	}
+
+	for _, o := range opts {
+		o(message)
+	}
+
+	recorder.Record(&StatusUpdate{
+		Messages: []*Message{message},
+	})
+}
+
 // GroupOpt is an option for creating a Group.
 type GroupOpt func(*Group)
 

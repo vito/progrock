@@ -155,16 +155,22 @@ message Message {
 }
 
 // MessageLevel indicates the severity of a message.
+//
+// Note that there isn't an INFO level as Messages aren't meant to be used for
+// general-purpose logging or updates; those should go through the regular
+// vertex status update flow instead. Nevertheless, room has been left for more
+// levels in the future, and the enum values are aligned with Go's log/slog
+// package.
 enum MessageLevel {
   // DEBUG indicates that the message should only be shown if debugging is
   // enabled.
-  DEBUG = 0;
+  DEBUG = -4;
   // WARNING indicates that the message should be shown to the user at all
   // times, but that execution of the program can continue as normal.
-  WARNING = 1;
+  WARNING = 4;
   // ERROR indicates that the message should be shown to the user, and that
   // executation of the program cannot continue.
-  ERROR = 2;
+  ERROR = 8;
 }
 
 // ProgressService is a service that allows clients to stream updates to a
