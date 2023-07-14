@@ -162,6 +162,12 @@ message Message {
 // levels in the future, and the enum values are aligned with Go's log/slog
 // package.
 enum MessageLevel {
+  // INVALID is not a valid message level. Protobuf requires the first enum
+  // value to be 0, so here we are.
+  //
+  // In the future this _may_ become INFO, which would match Go's log/slog
+  // package convention, but no promises!
+  INVALID = 0;
   // DEBUG indicates that the message should only be shown if debugging is
   // enabled.
   DEBUG = -4;
