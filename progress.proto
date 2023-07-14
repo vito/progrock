@@ -18,6 +18,8 @@ message StatusUpdate {
   repeated Group groups = 4;
   // Memberships contains a set of membership updates.
   repeated Membership memberships = 5;
+  // Messages contains global messages to show to the user.
+  repeated Message messages = 6;
 };
 
 // Membership declares a set of vertexes to be members of a group.
@@ -133,6 +135,32 @@ enum LogStream {
   STDOUT = 1;
   // STDOUT is /dev/stderr.
   STDERR = 2;
+}
+
+// Message is a message to display to the user at a global level.
+message Message {
+  // Message is the human-readable content of the message.
+  string message = 1;
+  // Level indicates the severity of the message.
+  MessageLevel level = 2;
+  // Code is an optional machine-readable name for the message, such as an
+  // error code. It may be included for i10n.
+  optional string code = 3;
+  // Labels contains a series of name/value pairs.
+  repeated Label labels = 4;
+}
+
+// MessageLevel indicates the severity of a message.
+enum MessageLevel {
+  // DEBUG indicates that the message should only be shown if debugging is
+  // enabled.
+  DEBUG = 0;
+  // WARNING indicates that the message should be shown to the user at all
+  // times, but that execution of the program can continue as normal.
+  WARNING = 1;
+  // ERROR indicates that the message should be shown to the user, and that
+  // executation of the program cannot continue.
+  ERROR = 2;
 }
 
 // ProgressService is a service that allows clients to stream updates to a
