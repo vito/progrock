@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -47,6 +48,7 @@ func DialRPC(ctx context.Context, target string) (Writer, error) {
 type RPCWriter struct {
 	Conn    *grpc.ClientConn
 	Updates ProgressService_WriteUpdatesClient
+	l       sync.Mutex
 }
 
 // NewRPCWriter returns a new RPCWriter.
@@ -59,6 +61,8 @@ func NewRPCWriter(conn *grpc.ClientConn, updates ProgressService_WriteUpdatesCli
 
 // WriteStatus implements Writer.
 func (w *RPCWriter) WriteStatus(status *StatusUpdate) error {
+	w.l.Lock()
+	defer w.l.Unlock()
 	return w.Updates.Send(status)
 }
 
