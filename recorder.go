@@ -65,27 +65,35 @@ func (recorder *Recorder) Record(status *StatusUpdate) error {
 }
 
 // MessageOpt is an option for creating a Message.
-type MessageOpt func(*Message)
+type MessageOpt interface {
+	MessageOpt(*Message)
+}
+
+type messageOptFunc func(*Message)
+
+func (f messageOptFunc) MessageOpt(m *Message) {
+	f(m)
+}
 
 // WithMessageLevel sets the message level.
 func WithMessageLevel(level MessageLevel) MessageOpt {
-	return func(m *Message) {
+	return messageOptFunc(func(m *Message) {
 		m.Level = level
-	}
+	})
 }
 
 // WithMessageCode sets the message code.
 func WithMessageCode(code string) MessageOpt {
-	return func(m *Message) {
+	return messageOptFunc(func(m *Message) {
 		m.Code = &code
-	}
+	})
 }
 
 // WithMessageLabels sets the message labels.
 func WithMessageLabels(labels ...*Label) MessageOpt {
-	return func(m *Message) {
+	return messageOptFunc(func(m *Message) {
 		m.Labels = append(m.Labels, labels...)
-	}
+	})
 }
 
 // Debug sends a progress update with a debug-level message.
@@ -113,7 +121,7 @@ func (recorder *Recorder) message(msg string, opts ...MessageOpt) {
 	}
 
 	for _, o := range opts {
-		o(message)
+		o.MessageOpt(message)
 	}
 
 	recorder.Record(&StatusUpdate{
