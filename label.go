@@ -21,6 +21,11 @@ func Labelf(name string, format string, vals ...any) *Label {
 	}
 }
 
+// ErrorLabel is shorthand for Labelf("error", "%s", err).
+func ErrorLabel(err error) *Label {
+	return Labelf("error", "%s", err)
+}
+
 // MessageOpt adds the Label to the Message's labels.
 func (l *Label) MessageOpt(m *Message) {
 	m.Labels = append(m.Labels, l)
