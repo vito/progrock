@@ -61,6 +61,8 @@ func (w *Writer) WriteStatus(status *progrock.StatusUpdate) error {
 
 	w.trace.update(status)
 	w.mux.print(w.trace)
+	w.mux.printMessages(status.Messages)
+
 	return nil
 }
 

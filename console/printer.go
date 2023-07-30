@@ -314,6 +314,12 @@ func (p *textMux) print(t *trace) {
 	}
 }
 
+func (p *textMux) printMessages(msgs []*progrock.Message) {
+	for _, msg := range msgs {
+		progrock.WriteMessage(p.w, msg)
+	}
+}
+
 type vtxStat struct {
 	blockTime time.Duration
 	speed     float64

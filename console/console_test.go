@@ -191,6 +191,35 @@ func TestSingleRunningTasksProgress(t *testing.T) {
 	testGolden(t, buf)
 }
 
+func TestMessages(t *testing.T) {
+	t.Run("debug messages", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		writer := console.NewWriter(buf)
+		recorder := progrock.NewRecorder(writer)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Debug("hello")
+		testGolden(t, buf)
+	})
+
+	t.Run("warnings", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		writer := console.NewWriter(buf)
+		recorder := progrock.NewRecorder(writer)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Warn("uh oh")
+		testGolden(t, buf)
+	})
+
+	t.Run("errors", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		writer := console.NewWriter(buf)
+		recorder := progrock.NewRecorder(writer)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Error("oh no")
+		testGolden(t, buf)
+	})
+}
+
 func testGolden(t *testing.T, buf *bytes.Buffer) {
 	g := goldie.New(t)
 	g.Assert(t, t.Name(), buf.Bytes())

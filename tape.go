@@ -188,6 +188,10 @@ func (tape *Tape) log(msg *Message) {
 		return
 	}
 
+	WriteMessage(tape.globalLogs, msg)
+}
+
+func WriteMessage(w io.Writer, msg *Message) error {
 	var prefix termenv.Style
 	switch msg.Level {
 	case MessageLevel_DEBUG:
@@ -206,7 +210,8 @@ func (tape *Tape) log(msg *Message) {
 			String()
 	}
 
-	fmt.Fprintln(tape.globalLogs, prefix, out)
+	_, err := fmt.Fprintln(w, prefix, out)
+	return err
 }
 
 func (tape *Tape) Vertices() []*Vertex {
