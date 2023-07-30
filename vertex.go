@@ -71,17 +71,22 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 		Vertex:   vtx,
 	}
 
-	recorder.Record(&StatusUpdate{
+	update := &StatusUpdate{
 		Vertexes: []*Vertex{
 			vtx,
 		},
-		Memberships: []*Membership{
+	}
+
+	if recorder.Group != nil {
+		update.Memberships = []*Membership{
 			{
 				Group:    recorder.Group.Id,
 				Vertexes: []string{vtx.Id},
 			},
-		},
-	})
+		}
+	}
+
+	recorder.Record(update)
 
 	return rec
 }

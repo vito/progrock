@@ -30,12 +30,18 @@ type Recorder struct {
 // while sidestepping the issue of figuring out what the "root" name should be.
 const RootGroup = ""
 
-// NewRecorder creates a new Recorder, which writes to the given Writer.
+// NewRecorder creates a new Recorder which writes to the given Writer.
 //
 // It also initializes the "root" group and sends a progress update for the
 // group.
 func NewRecorder(w Writer, opts ...GroupOpt) *Recorder {
 	return newEmptyRecorder(w).WithGroup(RootGroup, opts...)
+}
+
+// NewPassthroughRecorder creates a new Recorder which writes to the given
+// Writer, without initializing a group.
+func NewPassthroughRecorder(w Writer) *Recorder {
+	return newEmptyRecorder(w)
 }
 
 func newEmptyRecorder(w Writer) *Recorder {
@@ -196,10 +202,16 @@ func (recorder *Recorder) WithGroup(name string, opts ...GroupOpt) *Recorder {
 
 // Join sends a progress update that the given vertexes are members of the
 // current group.
+//
+// If the Recorder does not have a group, it does nothing.
 func (recorder *Recorder) Join(vertexes ...digest.Digest) {
 	strs := make([]string, len(vertexes))
 	for i, v := range vertexes {
 		strs[i] = v.String()
+	}
+
+	if recorder.Group == nil {
+		return
 	}
 
 	recorder.Record(&StatusUpdate{
@@ -212,13 +224,15 @@ func (recorder *Recorder) Join(vertexes ...digest.Digest) {
 	})
 }
 
-// Complete marks the current group and all sub-groups as complete, and sends a
+// Complete marks any current group and all sub-groups as complete, and sends a
 // progress update for each.
 func (recorder *Recorder) Complete() {
 	for _, g := range recorder.groups {
 		g.Complete()
 	}
-	recorder.Group.Completed = timestamppb.New(Clock.Now())
+	if recorder.Group != nil {
+		recorder.Group.Completed = timestamppb.New(Clock.Now())
+	}
 	recorder.sync()
 }
 
@@ -229,6 +243,9 @@ func (recorder *Recorder) Close() error {
 
 // sync sends a progress update for the current group.
 func (recorder *Recorder) sync() {
+	if recorder.Group == nil {
+		return
+	}
 	recorder.Record(&StatusUpdate{
 		Groups: []*Group{recorder.Group},
 	})
