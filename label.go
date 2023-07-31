@@ -9,7 +9,7 @@ import "fmt"
 // plain string value Label constructor.
 func Labelf(name string, format string, vals ...any) *Label {
 	var value string
-	if len(vals) > 0 {
+	if len(vals) == 0 {
 		value = format
 	} else {
 		value = fmt.Sprintf(format, vals...)
