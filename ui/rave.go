@@ -25,7 +25,7 @@ type Spinner interface {
 	tea.Model
 
 	ViewFancy() string
-	ViewFrame(Frames) (string, time.Time, int)
+	ViewFrame(SpinnerFrames) (string, time.Time, int)
 }
 
 type Rave struct {
@@ -42,7 +42,7 @@ type Rave struct {
 	SpotifyTokenPath string
 
 	// The animation to display.
-	Frames Frames
+	Frames SpinnerFrames
 
 	// transmits an authenticated Spotify client during the auth callback flow
 	spotifyAuthState    string
@@ -77,37 +77,30 @@ var colors = []termenv.Color{
 // DefaultBPM is a sane default of 123 beats per minute.
 const DefaultBPM = 123
 
-// FramesPerBeat determines the granularity that the spinner's animation timing
-// for each beat, i.e. 10 for tenths of a second.
-const FramesPerBeat = 10
-
-// Frames contains animation frames.
-type Frames [FramesPerBeat]string
-
-var MeterFrames = [FramesPerBeat]string{
-	0: "█",
-	1: "█",
-	2: "▇",
-	3: "▆",
-	4: "▅",
-	5: "▄",
-	6: "▃",
-	7: "▂",
-	8: "▁",
-	9: " ",
+// SpinnerFrames contains animation frames.
+type SpinnerFrames struct {
+	Frames []string
+	Easing ease.Function
 }
 
-var FadeFrames = [FramesPerBeat]string{
-	0: "█",
-	1: "█",
-	2: "▓",
-	3: "▓",
-	4: "▒",
-	5: "▒",
-	6: "░",
-	7: "░",
-	8: " ",
-	9: " ",
+var MeterFrames = SpinnerFrames{
+	[]string{"█", "█", "▇", "▆", "▅", "▄", "▃", "▂", "▁", " "},
+	ease.InOutCubic,
+}
+
+var FadeFrames = SpinnerFrames{
+	[]string{"█", "█", "▓", "▓", "▒", "▒", "░", "░", " ", " "},
+	ease.InOutCubic,
+}
+
+var DotFrames = SpinnerFrames{
+	[]string{"⣾ ", "⣽ ", "⣻ ", "⢿ ", "⡿ ", "⣟ ", "⣯ ", "⣷ "},
+	ease.Linear,
+}
+
+var MiniDotFrames = SpinnerFrames{
+	[]string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
+	ease.Linear,
 }
 
 func NewRave() *Rave {
@@ -279,7 +272,8 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (rave *Rave) setFPS(bpm float64) tea.Cmd {
 	bps := bpm / 60.0
-	fps := bps * FramesPerBeat
+	framesPerBeat := len(rave.Frames.Frames)
+	fps := bps * float64(framesPerBeat)
 	fps *= 2 // decrease chance of missing a frame due to timing
 	rave.fps = fps
 	return tea.Cmd(func() tea.Msg {
@@ -305,22 +299,24 @@ func (rave *Rave) ViewFancy() string {
 	return frame
 }
 
-func (rave *Rave) ViewFrame(frames Frames) (string, time.Time, int) {
+func (rave *Rave) ViewFrame(frames SpinnerFrames) (string, time.Time, int) {
+	framesPerBeat := len(frames.Frames)
+
 	now := time.Now()
 
 	pos, pct := rave.Progress(now)
 
-	frame := int(ease.InOutCubic(pct) * 10)
+	frame := int(frames.Easing(pct) * float64(framesPerBeat))
 
 	// some animations go > 100% or <100%, so be defensive and clamp to the
 	// frames since that doesn't actually make sense
 	if frame < 0 {
 		frame = 0
-	} else if frame >= FramesPerBeat {
-		frame = FramesPerBeat - 1
+	} else if frame >= framesPerBeat {
+		frame = framesPerBeat - 1
 	}
 
-	return frames[frame], now, pos
+	return frames.Frames[frame], now, pos
 }
 
 func (model *Rave) viewDetails(now time.Time, pos int) string {

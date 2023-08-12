@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/muesli/termenv"
 	"github.com/vito/progrock/ui"
+	"golang.org/x/exp/slices"
 )
 
 // Tape is a Writer that collects all progress output for displaying in a
@@ -82,6 +84,10 @@ const (
 
 	taskSymbol          = vrbBar
 	inactiveGroupSymbol = vBar
+
+	iconSkipped = "∅"
+	iconSuccess = "✓"
+	iconFailure = "✖"
 )
 
 // NewTape returns a new Tape.
@@ -361,29 +367,42 @@ func (tape *Tape) SetWindowSize(w, h int) {
 	tape.l.Unlock()
 }
 
-var pulse ui.Frames
+var pulse = ui.FadeFrames
 
 func init() {
-	pulse = ui.Frames{}
-	copy(pulse[:], ui.FadeFrames[:])
-	lastFrame := (ui.FramesPerBeat / 4) * 3
-	for i := lastFrame; i < len(pulse); i++ {
-		pulse[i] = ui.FadeFrames[lastFrame]
+	framesPerBeat := len(ui.FadeFrames.Frames)
+	frames := make([]string, framesPerBeat)
+	copy(frames, ui.FadeFrames.Frames)
+	lastFrame := (framesPerBeat / 4) * 3
+	for i := lastFrame; i < len(frames); i++ {
+		frames[i] = ui.FadeFrames.Frames[lastFrame]
 	}
+
+	pulse.Frames = frames
 }
 
 func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
-	b := &bouncer{
-		groups:         tape.groups,
-		group2vertexes: tape.group2vertexes,
-		vertex2groups:  tape.vertex2groups,
-
-		focus:        tape.focus,
-		showInternal: tape.showInternal,
+	var err error
+	if tape.focus {
+		err = tape.renderTree(w, u)
+	} else {
+		err = tape.renderDAG(w, u)
 	}
+	if err != nil {
+		return err
+	}
+
+	tape.globalLogs.SetHeight(10)
+	fmt.Fprint(w, tape.globalLogs.View())
+
+	return nil
+}
+
+func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
+	b := tape.bouncer()
 
 	var groupsW io.Writer
 	if tape.focus {
@@ -492,10 +511,157 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 	groups.Reap(groupsW, u, nil)
 
-	tape.globalLogs.SetHeight(10)
-	fmt.Fprint(w, tape.globalLogs.View())
+	return nil
+}
+
+func (b *bouncer) Ancestry(grp *Group) []*Group {
+	if grp == nil {
+		return nil
+	}
+
+	if grp.Parent == nil {
+		return []*Group{grp}
+	}
+
+	return append(b.Ancestry(b.groups[*grp.Parent]), grp)
+}
+
+func (tape *Tape) renderTree(w io.Writer, u *UI) error {
+	b := tape.bouncer()
+
+	var groups []*Group
+	for _, group := range b.groups {
+		groups = append(groups, group)
+	}
+	// TODO: (likely) stable order
+	sort.Slice(groups, func(i, j int) bool {
+		gi := groups[i]
+		gj := groups[j]
+		return gi.Started.AsTime().Before(gj.Started.AsTime())
+	})
+
+	// TODO: this ended up being super complicated after a lot of flailing and
+	// can probably be simplified. the goal is to render the groups depth-first,
+	// in a stable order. i tried harder and harder and it ended up being an
+	// unrelated mutation bug. -_-
+	rendered := map[string]struct{}{}
+	var render func(g *Group) error
+	render = func(g *Group) error {
+		if _, f := rendered[g.Id]; f {
+			return nil
+		} else {
+			rendered[g.Id] = struct{}{}
+		}
+
+		defer func() {
+			for _, sub := range groups {
+				if sub.Parent != nil && *sub.Parent == g.Id {
+					render(sub)
+				}
+			}
+		}()
+
+		vs := b.VisibleVertices(g)
+		if len(vs) == 0 {
+			return nil
+		}
+
+		sort.Slice(vs, func(i, j int) bool {
+			return slices.Index(tape.order, vs[i].Id) < slices.Index(tape.order, vs[j].Id)
+		})
+
+		depth := b.VisibleDepth(g) - 1
+		if depth < 0 {
+			depth = 0
+		}
+		indent := strings.Repeat("  ", depth)
+
+		termPrefix := new(bytes.Buffer)
+		fmt.Fprint(termPrefix, indent, vbBar, " ")
+
+		fmt.Fprintf(w, "%s%s %s\n", indent, dCaret, termenv.String(g.Name).Bold())
+
+		indent += "  "
+		for _, vtx := range vs {
+			var symbol string
+			var color termenv.Color
+			if vtx.Completed != nil {
+				if vtx.Error != nil {
+					symbol = iconFailure
+					color = termenv.ANSIRed
+				} else if vtx.Canceled {
+					symbol = iconSkipped
+					color = termenv.ANSIBrightBlack
+				} else {
+					symbol = iconSuccess
+					color = termenv.ANSIGreen
+				}
+			} else {
+				symbol, _, _ = u.Spinner.ViewFrame(ui.MiniDotFrames)
+				color = termenv.ANSIYellow
+			}
+
+			symbol = termenv.String(symbol).Foreground(color).String()
+
+			fmt.Fprintf(w, "%s%s ", indent, symbol)
+
+			if err := u.RenderVertexTree(w, vtx); err != nil {
+				return err
+			}
+
+			// TODO dedup from renderGraph
+			if tape.done || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
+				tasks := tape.tasks[vtx.Id]
+				for _, t := range tasks {
+					fmt.Fprint(w, indent, vrBar, " ")
+					if err := u.RenderTask(w, t); err != nil {
+						return err
+					}
+				}
+
+				term := tape.vertexLogs(vtx.Id)
+
+				if vtx.Error != nil {
+					term.SetHeight(term.UsedHeight())
+				} else {
+					term.SetHeight(tape.termHeight)
+				}
+
+				term.SetPrefix(indent + termenv.String(vbBar).Foreground(color).String() + " ")
+
+				if tape.done {
+					term.SetHeight(term.UsedHeight())
+				}
+
+				if err := u.RenderTerm(w, term); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	}
+
+	for _, g := range groups {
+		if err := render(g); err != nil {
+			return err
+		}
+	}
 
 	return nil
+}
+
+func (tape *Tape) bouncer() *bouncer {
+	return &bouncer{
+		groups:         tape.groups,
+		group2vertexes: tape.group2vertexes,
+
+		vertices:      tape.vertexes,
+		vertex2groups: tape.vertex2groups,
+
+		focus:        tape.focus,
+		showInternal: tape.showInternal,
+	}
 }
 
 func (tape *Tape) filteredOut(vtx *Vertex) bool {
@@ -619,6 +785,25 @@ func (b *bouncer) Parent(group *Group) (*Group, bool) {
 
 	parent, found := b.groups[group.GetParent()]
 	return parent, found
+}
+
+func (b *bouncer) VisibleDepth(group *Group) int {
+	if group.Parent == nil {
+		return 0
+	}
+
+	var depth int
+	vs := b.VisibleVertices(group)
+	if len(vs) > 0 {
+		depth++
+	}
+
+	parent, found := b.groups[group.GetParent()]
+	if !found {
+		return depth
+	}
+
+	return depth + b.VisibleDepth(parent)
 }
 
 func (b *bouncer) IsInGroup(vtx *Vertex, group *Group) bool {

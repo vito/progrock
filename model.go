@@ -90,6 +90,10 @@ func (ui *UI) RenderVertex(w io.Writer, v *Vertex) error {
 	return ui.tmpl.Lookup("vertex.tmpl").Execute(w, v)
 }
 
+func (ui *UI) RenderVertexTree(w io.Writer, v *Vertex) error {
+	return ui.tmpl.Lookup("vertex-tree.tmpl").Execute(w, v)
+}
+
 func (ui *UI) RenderTask(w io.Writer, v *VertexTask) error {
 	return ui.tmpl.Lookup("task.tmpl").Execute(w, v)
 }
