@@ -1,7 +1,56 @@
-{{.Spinner}} Playing ({{.Tape.CompletedCount}}/{{.Tape.TotalCount}})
-{{- range .Infos -}}
-{{- Foreground "8" " • " -}} {{- Bold .Name}}: {{.Value}}
+{{- $x := . -}}
+
+{{- range $i, $info := .Infos -}}
+{{-   if $i}}{{"\n"}}{{end -}}
+{{    Foreground "8" "•"}}{{ " " -}}
+{{-   Bold (printf "%s:" $info.Name)}} {{$info.Value -}}
 {{- end -}}
-{{- with .Help -}}
-{{- Foreground "8" " • " -}} {{- . -}}
+{{- if .Help -}}
+{{-   if .Infos}}
+{{-     " " -}}
+{{-     Foreground "8" "•" -}}
+{{-     " " -}}
+{{-   end -}}
+{{-   .Help -}}
+{{- end -}}
+
+{{- "\n" -}}
+
+{{- if .Tape.Closed -}}
+{{-   Foreground "8" (printf "[%s]" (.Tape.Duration | duration))}}{{" " -}}
+{{- else -}}
+{{-   Foreground "3" (printf "[%s]" (.Tape.Duration | duration))}}{{" " -}}
+{{- end -}}
+
+{{- if not .Tape.Closed -}}
+{{-   with .Tape.RunningCount -}}
+{{      Foreground "3" $x.Spinner}} {{printf "%d" . | Bold -}}
+{{-   end -}}
+{{-   " " -}}
+{{- end -}}
+{{- with .Tape.UncachedCount}}{{Foreground "2" "✔"}} {{printf "%d" . | Bold}}{{end -}}
+{{- with .Tape.CachedCount  }} {{Foreground "4" "∅"}} {{printf "%d" . | Bold}}{{end -}}
+{{- with .Tape.ErroredCount }} {{Foreground "1" "✘"}} {{printf "%d" . | Bold}}{{end -}}
+
+{{- if not .Tape.Closed -}}
+{{-   with .Tape.RunningVertex -}}
+{{-     Foreground "8" " • " -}}
+{{-     if .Internal -}}
+{{-       Foreground "8" .Name -}}
+{{-     else -}}
+{{-       Bold .Name -}}
+{{-     end -}}
+{{-     $activity := $x.Tape.Activity . -}}
+{{-     if or $activity.LastLine $activity.TaskBarsTotal -}}
+{{-       ":" -}}
+{{-     end -}}
+{{-     if $activity.TaskBarsTotal -}}
+{{-       " " -}}
+{{-       bar $activity.TaskBarsCurrent $activity.TaskBarsTotal}}
+{{-     end -}}
+{{-     with $activity.LastLine -}}
+{{-       " " -}}
+{{-       $activity.LastLine -}}
+{{-     end -}}
+{{-   end -}}
 {{- end -}}

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/muesli/termenv"
 	"github.com/vito/progrock/ui"
@@ -31,8 +32,12 @@ type Tape struct {
 	tasks map[string][]*VertexTask
 	logs  map[string]*ui.Vterm
 
-	// whether the tape has been closed
-	done bool
+	// whether and when the tape has been closed
+	closed   bool
+	closedAt time.Time
+
+	// the time that tape was created and closed
+	createdAt time.Time
 
 	// screen width and height
 	width, height int
@@ -79,6 +84,7 @@ const (
 	hbBar       = "┬"
 	lCaret      = "◀" //"<"
 	rCaret      = "▶" //">"
+	rEmptyCaret = "▷" //">"
 	dCaret      = "▼"
 	dEmptyCaret = "▽"
 
@@ -86,8 +92,8 @@ const (
 	inactiveGroupSymbol = vBar
 
 	iconSkipped = "∅"
-	iconSuccess = "✓"
-	iconFailure = "✖"
+	iconSuccess = "✔"
+	iconFailure = "✘"
 )
 
 // NewTape returns a new Tape.
@@ -110,6 +116,8 @@ func NewTape() *Tape {
 		globalLogs: ui.NewVterm(),
 
 		messageLevel: MessageLevel_WARNING,
+
+		createdAt: time.Now(),
 	}
 }
 
@@ -289,6 +297,7 @@ func (tape *Tape) Activity(vtx *Vertex) VertexActivity {
 }
 
 // CompletedCount returns the number of completed vertexes.
+// TODO: cache this
 func (tape *Tape) CompletedCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
@@ -301,6 +310,62 @@ func (tape *Tape) CompletedCount() int {
 	return completed
 }
 
+// UncachedCount returns the number of completed uncached vertexes.
+// TODO: cache this
+func (tape *Tape) RunningCount() int {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	var running int
+	for _, v := range tape.vertexes {
+		if v.Started != nil && v.Completed == nil {
+			running++
+		}
+	}
+	return running
+}
+
+// UncachedCount returns the number of completed uncached vertexes.
+// TODO: cache this
+func (tape *Tape) UncachedCount() int {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	var uncached int
+	for _, v := range tape.vertexes {
+		if v.Completed != nil && !v.Cached {
+			uncached++
+		}
+	}
+	return uncached
+}
+
+// CachedCount returns the number of cached vertexes.
+// TODO: cache this
+func (tape *Tape) CachedCount() int {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	var cached int
+	for _, v := range tape.vertexes {
+		if v.Cached {
+			cached++
+		}
+	}
+	return cached
+}
+
+// ErroredCount returns the number of errored vertexes.
+// TODO: cache this
+func (tape *Tape) ErroredCount() int {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	var errored int
+	for _, v := range tape.vertexes {
+		if v.Error != nil {
+			errored++
+		}
+	}
+	return errored
+}
+
 // TotalCount returns the total number of vertexes.
 func (tape *Tape) TotalCount() int {
 	tape.l.Lock()
@@ -308,13 +373,32 @@ func (tape *Tape) TotalCount() int {
 	return len(tape.vertexes)
 }
 
+// Duration returns the duration that the Tape has been accepting updates until
+// Close has been called.
+func (tape *Tape) Duration() time.Duration {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	if tape.closed {
+		return tape.closedAt.Sub(tape.createdAt)
+	}
+	return time.Since(tape.createdAt)
+}
+
 // Close marks the Tape as done, which tells it to display all vertex output
 // for the final render.
 func (tape *Tape) Close() error {
 	tape.l.Lock()
-	tape.done = true
+	tape.closed = true
+	tape.closedAt = time.Now()
 	tape.l.Unlock()
 	return nil
+}
+
+// Closed returns whether the Tape has been closed.
+func (tape *Tape) Closed() bool {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	return tape.closed
 }
 
 // VerboseEdges sets whether to display edges between vertexes in the same
@@ -484,7 +568,7 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 			groups = groups.AddVertex(groupsW, u, tape.groups, vtx, haveInput)
 		}
 
-		if tape.done || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
+		if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
 			term := tape.vertexLogs(vtx.Id)
 
 			if vtx.Error != nil {
@@ -499,7 +583,7 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 				term.SetPrefix(buf.String())
 			}
 
-			if tape.done {
+			if tape.closed {
 				term.SetHeight(term.UsedHeight())
 			}
 
@@ -579,7 +663,17 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 		termPrefix := new(bytes.Buffer)
 		fmt.Fprint(termPrefix, indent, vbBar, " ")
 
-		fmt.Fprintf(w, "%s%s %s\n", indent, dCaret, termenv.String(g.Name).Bold())
+		var names []string
+		for _, ancestor := range b.HiddenAncestors(g) {
+			if ancestor.Name == RootGroup {
+				continue
+			}
+
+			names = append(names, ancestor.Name)
+		}
+		names = append(names, g.Name)
+		groupPath := strings.Join(names, " "+rEmptyCaret+" ")
+		fmt.Fprintf(w, "%s%s %s\n", indent, dCaret, termenv.String(groupPath).Bold())
 
 		indent += "  "
 		for _, vtx := range vs {
@@ -597,7 +691,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 					color = termenv.ANSIGreen
 				}
 			} else {
-				symbol, _, _ = u.Spinner.ViewFrame(ui.MiniDotFrames)
+				symbol, _, _ = u.Spinner.ViewFrame(ui.DotFrames)
 				color = termenv.ANSIYellow
 			}
 
@@ -610,7 +704,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 			}
 
 			// TODO dedup from renderGraph
-			if tape.done || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
+			if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
 				tasks := tape.tasks[vtx.Id]
 				for _, t := range tasks {
 					fmt.Fprint(w, indent, vrBar, " ")
@@ -629,7 +723,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 
 				term.SetPrefix(indent + termenv.String(vbBar).Foreground(color).String() + " ")
 
-				if tape.done {
+				if tape.closed {
 					term.SetHeight(term.UsedHeight())
 				}
 
@@ -785,6 +879,27 @@ func (b *bouncer) Parent(group *Group) (*Group, bool) {
 
 	parent, found := b.groups[group.GetParent()]
 	return parent, found
+}
+
+// TODO cache the hell out of this
+func (b *bouncer) HiddenAncestors(group *Group) []*Group {
+	var hidden []*Group
+	for {
+		parent, found := b.Parent(group)
+		if !found {
+			break
+		}
+
+		if len(b.VisibleVertices(parent)) == 0 {
+			hidden = append(hidden, parent)
+		} else {
+			break
+		}
+
+		group = parent
+	}
+
+	return hidden
 }
 
 func (b *bouncer) VisibleDepth(group *Group) int {

@@ -112,22 +112,8 @@ func (ui *UI) RenderTrailer(w io.Writer, infos []StatusInfo) error {
 }
 
 func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo, helpView string) error {
+	spinner, _, _ := u.Spinner.ViewFrame(ui.DotFrames)
 	return u.tmpl.Lookup("status.tmpl").Execute(w, struct {
-		Spinner string
-		Tape    *Tape
-		Infos   []StatusInfo
-		Help    string
-	}{
-		Spinner: u.Spinner.ViewFancy(),
-		Tape:    tape,
-		Infos:   infos,
-		Help:    helpView,
-	})
-}
-
-func (u *UI) RenderFocusStatus(w io.Writer, tape *Tape, infos []StatusInfo, helpView string) error {
-	spinner, _, _ := u.Spinner.ViewFrame(pulse)
-	return u.tmpl.Lookup("focus-status.tmpl").Execute(w, struct {
 		Spinner      string
 		VertexSymbol string
 		Tape         *Tape
@@ -238,10 +224,11 @@ func (m *Model) Print(w io.Writer) {
 }
 
 func (m *Model) PrintTrailer(w io.Writer) {
-	if err := m.ui.RenderTrailer(w, m.statusInfos); err != nil {
+	if err := m.ui.RenderStatus(w, m.tape, m.statusInfos, ""); err != nil {
 		fmt.Fprintln(w, "failed to render trailer:", err)
 		return
 	}
+	fmt.Fprintln(w)
 }
 
 type EndMsg struct{}
@@ -373,11 +360,7 @@ func (m *Model) View() string {
 	widthMinusHelp -= len(helpSep)
 
 	statusBuf := new(bytes.Buffer)
-	if m.tape.focus {
-		m.ui.RenderFocusStatus(statusBuf, m.tape, m.statusInfos, helpView)
-	} else {
-		m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos, helpView)
-	}
+	m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos, helpView)
 
 	footer := lipgloss.JoinHorizontal(
 		lipgloss.Bottom,
