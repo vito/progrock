@@ -17,9 +17,9 @@
 {{- "\n" -}}
 
 {{- if .Tape.Closed -}}
-{{-   Foreground "8" (printf "[%s]" (.Tape.Duration | duration))}}{{" " -}}
+{{-   Foreground "8" "⧗"}} {{Bold (.Tape.Duration | duration)}}{{" " -}}
 {{- else -}}
-{{-   Foreground "3" (printf "[%s]" (.Tape.Duration | duration))}}{{" " -}}
+{{-   Foreground "3" "⧗"}} {{Bold (.Tape.Duration | duration)}}{{" " -}}
 {{- end -}}
 
 {{- if not .Tape.Closed -}}
