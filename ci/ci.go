@@ -10,11 +10,17 @@ func main() {
 	dag.Environment().
 		WithCheck_(Test).
 		WithArtifact_(Generate).
-		WithArtifact_(BuildDemo).
+		WithArtifact_(Demo).
 		Serve()
 }
 
-func BuildDemo(ctx dagger.Context) *dagger.Directory {
+// Test runs tests.
+func Test(ctx dagger.Context) *dagger.EnvironmentCheck {
+	return dag.Go().Test(Base(ctx), Code(ctx))
+}
+
+// Demo builds the demo app.
+func Demo(ctx dagger.Context) *dagger.Directory {
 	return dag.Go().Build(
 		Base(ctx),
 		Code(ctx),
@@ -26,12 +32,9 @@ func BuildDemo(ctx dagger.Context) *dagger.Directory {
 	)
 }
 
+// Generate generates code from .proto files.
 func Generate(ctx dagger.Context) *dagger.Directory {
 	return dag.Go().Generate(Base(ctx), Code(ctx))
-}
-
-func Test(ctx dagger.Context) *dagger.EnvironmentCheck {
-	return dag.Go().Test(Base(ctx), Code(ctx))
 }
 
 func Base(ctx dagger.Context) *dagger.Container {
@@ -43,10 +46,8 @@ func Base(ctx dagger.Context) *dagger.Container {
 		"protoc-gen-go-grpc",
 		"rust",
 	}).
-		WithEnvVariable("GOBIN", "/go/bin").
-		WithEnvVariable("PATH", "$GOBIN:$PATH", dagger.ContainerWithEnvVariableOpts{
-			Expand: true,
-		}).
+		With(dag.Go().BinPath).
+		With(dag.Go().GlobalCache).
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
 }
 

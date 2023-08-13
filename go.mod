@@ -21,7 +21,6 @@ require (
 	golang.org/x/oauth2 v0.7.0
 	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -54,6 +53,7 @@ require (
 	golang.org/x/tools v0.11.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230813035831-1d9428376f13
+replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230813182437-0a19df361003

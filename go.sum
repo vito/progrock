@@ -206,8 +206,8 @@ github.com/stretchr/testify v1.8.2 h1:+h33VjcLVPDHtOdpUCuF+7gSuG3yGIftsP1YvFihtJ
 github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/vektah/gqlparser/v2 v2.5.6 h1:Ou14T0N1s191eRMZ1gARVqohcbe1e8FrcONScsq8cRU=
 github.com/vektah/gqlparser/v2 v2.5.6/go.mod h1:z8xXUff237NntSuH8mLFijZ+1tjV1swDbpDqjJmk6ME=
-github.com/vito/dagger/sdk/go v0.0.0-20230813035831-1d9428376f13 h1:5QasWs8I5Y1vbESRPrZE6Am29/qJ7witfCJ+gM+NAg0=
-github.com/vito/dagger/sdk/go v0.0.0-20230813035831-1d9428376f13/go.mod h1:3OYDaif9MH2ajxX+oLp8oeRLDEfz2pIjpqis/j4GkuY=
+github.com/vito/dagger/sdk/go v0.0.0-20230813182437-0a19df361003 h1:MhHnp8Wn6UHFCYQ8B1kGjN0tXxBO42JppuI3icuF/No=
+github.com/vito/dagger/sdk/go v0.0.0-20230813182437-0a19df361003/go.mod h1:3OYDaif9MH2ajxX+oLp8oeRLDEfz2pIjpqis/j4GkuY=
 github.com/vito/vt100 v0.1.2 h1:gRhKJ/shHTRfMHg+Wc5ExHJzV6HHZqyQIAL52x4EUmA=
 github.com/vito/vt100 v0.1.2/go.mod h1:ByMBsZZEP04RrkT9q/UxvZOjECM8Xc/MRLZ7GLrAUXs=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
