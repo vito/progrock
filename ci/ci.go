@@ -2,35 +2,40 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"github.com/vito/progrock/ci/pkgs"
 )
 
+var dag = dagger.DefaultClient()
+
 func main() {
-	dagger.ServeCommands(
-		BuildDemo,
-		Generate,
-		Test,
+	dag.Environment().
+		WithCheck_(Test).
+		WithArtifact_(Generate).
+		WithArtifact_(BuildDemo).
+		Serve()
+}
+
+func BuildDemo(ctx dagger.Context) *dagger.Directory {
+	return dag.Go().Build(
+		Base(ctx),
+		Code(ctx),
+		dagger.GoBuildOpts{
+			Packages: []string{"./demo"},
+			Static:   true,
+			Subdir:   "demo",
+		},
 	)
 }
 
-func BuildDemo(ctx dagger.Context) (*dagger.Directory, error) {
-	return pkgs.GoBuild(ctx, Base(ctx), Code(ctx), pkgs.GoBuildOpts{
-		Packages: []string{"./demo"},
-		Static:   true,
-		Subdir:   "demo",
-	}), nil
+func Generate(ctx dagger.Context) *dagger.Directory {
+	return dag.Go().Generate(Base(ctx), Code(ctx))
 }
 
-func Generate(ctx dagger.Context) (*dagger.Directory, error) {
-	return pkgs.GoGenerate(ctx, Base(ctx), Code(ctx)), nil
-}
-
-func Test(ctx dagger.Context) (string, error) {
-	return pkgs.Gotestsum(ctx, Base(ctx), Code(ctx)).Stdout(ctx)
+func Test(ctx dagger.Context) *dagger.EnvironmentCheck {
+	return dag.Go().Test(Base(ctx), Code(ctx))
 }
 
 func Base(ctx dagger.Context) *dagger.Container {
-	return pkgs.Wolfi(ctx, []string{
+	return dag.Apko().Wolfi([]string{
 		"go",
 		"protobuf-dev", // for google/protobuf/*.proto
 		"protoc",
@@ -38,12 +43,15 @@ func Base(ctx dagger.Context) *dagger.Container {
 		"protoc-gen-go-grpc",
 		"rust",
 	}).
-		With(pkgs.GoBin).
+		WithEnvVariable("GOBIN", "/go/bin").
+		WithEnvVariable("PATH", "$GOBIN:$PATH", dagger.ContainerWithEnvVariableOpts{
+			Expand: true,
+		}).
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
 }
 
 func Code(ctx dagger.Context) *dagger.Directory {
-	return ctx.Client().Host().Directory(".", dagger.HostDirectoryOpts{
+	return dag.Host().Directory(".", dagger.HostDirectoryOpts{
 		Include: []string{
 			"**/*.go",
 			"**/go.mod",
