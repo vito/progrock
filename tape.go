@@ -864,7 +864,7 @@ func (b *bouncer) VisibleVertices(group *Group) []*Vertex {
 			continue
 		}
 
-		if (b.focus && !vtx.Focused) || (vtx.Internal && !b.showInternal) {
+		if (vtx.Error == nil) && (b.focus && !vtx.Focused) || (vtx.Internal && !b.showInternal) {
 			continue
 		}
 
