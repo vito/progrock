@@ -94,7 +94,7 @@ var FadeFrames = SpinnerFrames{
 }
 
 var DotFrames = SpinnerFrames{
-	[]string{"⣾ ", "⣽ ", "⣻ ", "⢿ ", "⡿ ", "⣟ ", "⣯ ", "⣷ "},
+	[]string{"⣾", "⣷", "⣧", "⣏", "⡟", "⡿", "⢿", "⢻", "⣹", "⣼"},
 	ease.Linear,
 }
 
