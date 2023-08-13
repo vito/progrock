@@ -524,7 +524,7 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 			groups = groups.AddGroup(groupsW, u, b, g, tape.log)
 		}
 
-		if tape.filteredOut(vtx) {
+		if !b.IsVisible(vtx) {
 			continue
 		}
 
@@ -624,6 +624,65 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 		return gi.Started.AsTime().Before(gj.Started.AsTime())
 	})
 
+	renderVtx := func(vtx *Vertex, indent string) error {
+		var symbol string
+		var color termenv.Color
+		if vtx.Completed != nil {
+			if vtx.Error != nil {
+				symbol = iconFailure
+				color = termenv.ANSIRed
+			} else if vtx.Canceled {
+				symbol = iconSkipped
+				color = termenv.ANSIBrightBlack
+			} else {
+				symbol = iconSuccess
+				color = termenv.ANSIGreen
+			}
+		} else {
+			symbol, _, _ = u.Spinner.ViewFrame(ui.DotFrames)
+			color = termenv.ANSIYellow
+		}
+
+		symbol = termenv.String(symbol).Foreground(color).String()
+
+		fmt.Fprintf(w, "%s%s ", indent, symbol)
+
+		if err := u.RenderVertexTree(w, vtx); err != nil {
+			return err
+		}
+
+		// TODO dedup from renderGraph
+		if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
+			tasks := tape.tasks[vtx.Id]
+			for _, t := range tasks {
+				fmt.Fprint(w, indent, vrBar, " ")
+				if err := u.RenderTask(w, t); err != nil {
+					return err
+				}
+			}
+
+			term := tape.vertexLogs(vtx.Id)
+
+			if vtx.Error != nil {
+				term.SetHeight(term.UsedHeight())
+			} else {
+				term.SetHeight(tape.termHeight)
+			}
+
+			term.SetPrefix(indent + termenv.String(vbBar).Foreground(color).String() + " ")
+
+			if tape.closed {
+				term.SetHeight(term.UsedHeight())
+			}
+
+			if err := u.RenderTerm(w, term); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
 	// TODO: this ended up being super complicated after a lot of flailing and
 	// can probably be simplified. the goal is to render the groups depth-first,
 	// in a stable order. i tried harder and harder and it ended up being an
@@ -660,9 +719,6 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 		}
 		indent := strings.Repeat("  ", depth)
 
-		termPrefix := new(bytes.Buffer)
-		fmt.Fprint(termPrefix, indent, vbBar, " ")
-
 		if g.Name != RootGroup {
 			var names []string
 			for _, ancestor := range b.HiddenAncestors(g) {
@@ -679,63 +735,18 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 		}
 
 		for _, vtx := range vs {
-			var symbol string
-			var color termenv.Color
-			if vtx.Completed != nil {
-				if vtx.Error != nil {
-					symbol = iconFailure
-					color = termenv.ANSIRed
-				} else if vtx.Canceled {
-					symbol = iconSkipped
-					color = termenv.ANSIBrightBlack
-				} else {
-					symbol = iconSuccess
-					color = termenv.ANSIGreen
-				}
-			} else {
-				symbol, _, _ = u.Spinner.ViewFrame(ui.DotFrames)
-				color = termenv.ANSIYellow
-			}
-
-			symbol = termenv.String(symbol).Foreground(color).String()
-
-			fmt.Fprintf(w, "%s%s ", indent, symbol)
-
-			if err := u.RenderVertexTree(w, vtx); err != nil {
+			if err := renderVtx(vtx, indent); err != nil {
 				return err
-			}
-
-			// TODO dedup from renderGraph
-			if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
-				tasks := tape.tasks[vtx.Id]
-				for _, t := range tasks {
-					fmt.Fprint(w, indent, vrBar, " ")
-					if err := u.RenderTask(w, t); err != nil {
-						return err
-					}
-				}
-
-				term := tape.vertexLogs(vtx.Id)
-
-				if vtx.Error != nil {
-					term.SetHeight(term.UsedHeight())
-				} else {
-					term.SetHeight(tape.termHeight)
-				}
-
-				term.SetPrefix(indent + termenv.String(vbBar).Foreground(color).String() + " ")
-
-				if tape.closed {
-					term.SetHeight(term.UsedHeight())
-				}
-
-				if err := u.RenderTerm(w, term); err != nil {
-					return err
-				}
 			}
 		}
 
 		return nil
+	}
+
+	for _, v := range b.VisibleVertices(nil) {
+		if err := renderVtx(v, ""); err != nil {
+			return err
+		}
 	}
 
 	for _, g := range groups {
@@ -749,6 +760,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 
 func (tape *Tape) bouncer() *bouncer {
 	return &bouncer{
+		order:          tape.order,
 		groups:         tape.groups,
 		group2vertexes: tape.group2vertexes,
 
@@ -758,26 +770,6 @@ func (tape *Tape) bouncer() *bouncer {
 		focus:        tape.focus,
 		showInternal: tape.showInternal,
 	}
-}
-
-func (tape *Tape) filteredOut(vtx *Vertex) bool {
-	if vtx.Internal && !tape.showInternal {
-		// filter out internal vertices unless we're showing them
-		return true
-	}
-
-	if vtx.Error != nil {
-		// in general, show errored vertexes, except internal ones since they may
-		// already be captured and presented in a nicer manner instead
-		return false
-	}
-
-	if tape.focus && !vtx.Focused {
-		// if we're focusing, ignore unfocused vertices
-		return true
-	}
-
-	return false
 }
 
 func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
@@ -828,6 +820,7 @@ func (tape *Tape) vertexLogs(vertex string) *ui.Vterm {
 }
 
 type bouncer struct {
+	order          []string
 	groups         map[string]*Group
 	vertices       map[string]*Vertex
 	group2vertexes map[string]map[string]struct{}
@@ -855,8 +848,47 @@ func (b *bouncer) Groups(vtx *Vertex) []*Group {
 	return groups
 }
 
+func (b *bouncer) IsVisible(vtx *Vertex) bool {
+	if vtx.Internal && !b.showInternal {
+		// filter out internal vertices unless we're showing them
+		return false
+	}
+
+	if vtx.Error != nil {
+		// in general, show errored vertexes, except internal ones since they may
+		// already be captured and presented in a nicer manner instead
+		return true
+	}
+
+	if b.focus && !vtx.Focused {
+		// if we're focusing, ignore unfocused vertices
+		return false
+	}
+
+	return true
+}
+
 func (b *bouncer) VisibleVertices(group *Group) []*Vertex {
 	var visible []*Vertex
+
+	if group == nil {
+		for _, vid := range b.order {
+			vtx, found := b.vertices[vid]
+			if !found {
+				// shouldn't happen
+				continue
+			}
+
+			orphaned := len(b.vertex2groups[vid]) == 0
+
+			if orphaned && b.IsVisible(vtx) {
+				visible = append(visible, vtx)
+			}
+		}
+
+		return visible
+	}
+
 	for vid := range b.group2vertexes[group.Id] {
 		vtx, found := b.vertices[vid]
 		if !found {
@@ -864,11 +896,9 @@ func (b *bouncer) VisibleVertices(group *Group) []*Vertex {
 			continue
 		}
 
-		if (vtx.Error == nil) && (b.focus && !vtx.Focused) || (vtx.Internal && !b.showInternal) {
-			continue
+		if b.IsVisible(vtx) {
+			visible = append(visible, vtx)
 		}
-
-		visible = append(visible, vtx)
 	}
 
 	return visible
