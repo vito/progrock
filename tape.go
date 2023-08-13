@@ -663,19 +663,21 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 		termPrefix := new(bytes.Buffer)
 		fmt.Fprint(termPrefix, indent, vbBar, " ")
 
-		var names []string
-		for _, ancestor := range b.HiddenAncestors(g) {
-			if ancestor.Name == RootGroup {
-				continue
+		if g.Name != RootGroup {
+			var names []string
+			for _, ancestor := range b.HiddenAncestors(g) {
+				if ancestor.Name == RootGroup {
+					continue
+				}
+
+				names = append(names, ancestor.Name)
 			}
-
-			names = append(names, ancestor.Name)
+			names = append(names, g.Name)
+			groupPath := strings.Join(names, " "+rCaret+" ")
+			fmt.Fprintf(w, "%s%s %s\n", indent, rCaret, termenv.String(groupPath).Bold())
+			indent += "  "
 		}
-		names = append(names, g.Name)
-		groupPath := strings.Join(names, " "+rEmptyCaret+" ")
-		fmt.Fprintf(w, "%s%s %s\n", indent, dCaret, termenv.String(groupPath).Bold())
 
-		indent += "  "
 		for _, vtx := range vs {
 			var symbol string
 			var color termenv.Color
