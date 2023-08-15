@@ -36,11 +36,13 @@ type lastStatus struct {
 }
 
 type textMux struct {
-	w            io.Writer
-	ui           Components
-	current      string
-	last         map[string]lastStatus
-	notFirst     bool
+	w        io.Writer
+	ui       Components
+	current  string
+	last     map[string]lastStatus
+	notFirst bool
+
+	messageLevel progrock.MessageLevel
 	showInternal bool
 }
 
@@ -316,6 +318,10 @@ func (p *textMux) print(t *trace) {
 
 func (p *textMux) printMessages(msgs []*progrock.Message) {
 	for _, msg := range msgs {
+		if msg.Level < p.messageLevel {
+			return
+		}
+
 		progrock.WriteMessage(p.w, msg)
 	}
 }

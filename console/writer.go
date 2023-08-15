@@ -9,8 +9,10 @@ import (
 )
 
 type Writer struct {
-	clock        clockwork.Clock
-	ui           Components
+	clock clockwork.Clock
+	ui    Components
+
+	messageLevel progrock.MessageLevel
 	showInternal bool
 
 	trace *trace
@@ -38,11 +40,18 @@ func ShowInternal(show bool) WriterOpt {
 	}
 }
 
+func WithMessageLevel(level progrock.MessageLevel) WriterOpt {
+	return func(w *Writer) {
+		w.messageLevel = level
+	}
+}
+
 func NewWriter(dest io.Writer, opts ...WriterOpt) progrock.Writer {
 	w := &Writer{
 		clock:        clockwork.NewRealClock(),
 		ui:           DefaultUI,
 		showInternal: false,
+		messageLevel: progrock.MessageLevel_WARNING,
 	}
 
 	for _, opt := range opts {
@@ -50,7 +59,12 @@ func NewWriter(dest io.Writer, opts ...WriterOpt) progrock.Writer {
 	}
 
 	w.trace = newTrace(w.ui, w.clock)
-	w.mux = &textMux{w: dest, ui: w.ui, showInternal: w.showInternal}
+	w.mux = &textMux{
+		w:            dest,
+		ui:           w.ui,
+		showInternal: w.showInternal,
+		messageLevel: w.messageLevel,
+	}
 
 	return w
 }

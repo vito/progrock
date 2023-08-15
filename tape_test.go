@@ -643,7 +643,7 @@ func TestMessages(t *testing.T) {
 		testGolden(t, tape)
 	})
 
-	t.Run("debug messages are not shown if level is set", func(t *testing.T) {
+	t.Run("debug messages are shown if level is set", func(t *testing.T) {
 		tape := progrock.NewTape()
 		tape.MessageLevel(progrock.MessageLevel_DEBUG)
 		recorder := progrock.NewRecorder(tape)

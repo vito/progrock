@@ -192,7 +192,7 @@ func TestSingleRunningTasksProgress(t *testing.T) {
 }
 
 func TestMessages(t *testing.T) {
-	t.Run("debug messages", func(t *testing.T) {
+	t.Run("debug messages are not shown by default", func(t *testing.T) {
 		buf := bytes.NewBuffer(nil)
 		writer := console.NewWriter(buf)
 		recorder := progrock.NewRecorder(writer)
@@ -201,7 +201,17 @@ func TestMessages(t *testing.T) {
 		testGolden(t, buf)
 	})
 
-	t.Run("warnings", func(t *testing.T) {
+	t.Run("debug messages are shown if level is set", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		writer := console.NewWriter(buf,
+			console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+		recorder := progrock.NewRecorder(writer)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Debug("hello")
+		testGolden(t, buf)
+	})
+
+	t.Run("warnings are shown by default", func(t *testing.T) {
 		buf := bytes.NewBuffer(nil)
 		writer := console.NewWriter(buf)
 		recorder := progrock.NewRecorder(writer)
@@ -210,7 +220,7 @@ func TestMessages(t *testing.T) {
 		testGolden(t, buf)
 	})
 
-	t.Run("errors", func(t *testing.T) {
+	t.Run("errors are shown by default", func(t *testing.T) {
 		buf := bytes.NewBuffer(nil)
 		writer := console.NewWriter(buf)
 		recorder := progrock.NewRecorder(writer)
