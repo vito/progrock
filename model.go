@@ -13,7 +13,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -111,32 +110,36 @@ func (ui *UI) RenderTrailer(w io.Writer, infos []StatusInfo) error {
 	})
 }
 
-func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo, helpView string) error {
+func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo) error {
 	spinner, _, _ := u.Spinner.ViewFrame(ui.DotFrames)
 	return u.tmpl.Lookup("status.tmpl").Execute(w, struct {
 		Spinner      string
 		VertexSymbol string
 		Tape         *Tape
 		Infos        []StatusInfo
-		Help         string
 	}{
 		Spinner:      spinner,
 		VertexSymbol: block,
 		Tape:         tape,
 		Infos:        infos,
-		Help:         helpView,
 	})
 }
 
 func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, tui bool) (*tea.Program, func()) {
 	model := ui.NewModel(tape, interrupt, w)
 
-	opts := []tea.ProgramOption{tea.WithOutput(w)}
+	opts := []tea.ProgramOption{
+		tea.WithOutput(w),
+
+		// Progrock is non-interactive so that input can be passed straight through
+		// to e.g. an underlying command.
+		tea.WithInput(nil),
+	}
 
 	if tui {
-		opts = append(opts, tea.WithMouseCellMotion())
+		// opts = append(opts, tea.WithMouseCellMotion())
 	} else {
-		opts = append(opts, tea.WithInput(new(bytes.Buffer)), tea.WithoutRenderer())
+		opts = append(opts, tea.WithoutRenderer())
 	}
 
 	prog := tea.NewProgram(model, opts...)
@@ -160,15 +163,6 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, 
 }
 
 func (ui *UI) NewModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *Model {
-	helpModel := help.New()
-	helpModel.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
-	helpModel.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
-	helpModel.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
-	helpModel.Styles.Ellipsis = helpModel.Styles.ShortSeparator.Copy()
-	helpModel.Styles.FullKey = helpModel.Styles.ShortKey.Copy()
-	helpModel.Styles.FullDesc = helpModel.Styles.ShortDesc.Copy()
-	helpModel.Styles.FullSeparator = helpModel.Styles.ShortSeparator.Copy()
-
 	return &Model{
 		tape: tape,
 		ui:   ui,
@@ -181,8 +175,6 @@ func (ui *UI) NewModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *M
 		maxWidth:  80,
 		maxHeight: 24,
 		viewport:  viewport.New(80, 24),
-
-		help: helpModel,
 	}
 }
 
@@ -204,8 +196,6 @@ type Model struct {
 	fps float64
 
 	finished bool
-
-	help help.Model
 }
 
 type StatusInfo struct {
@@ -224,7 +214,7 @@ func (m *Model) Print(w io.Writer) {
 }
 
 func (m *Model) PrintTrailer(w io.Writer) {
-	if err := m.ui.RenderStatus(w, m.tape, m.statusInfos, ""); err != nil {
+	if err := m.ui.RenderStatus(w, m.tape, m.statusInfos); err != nil {
 		fmt.Fprintln(w, "failed to render trailer:", err)
 		return
 	}
@@ -267,7 +257,6 @@ func (m *Model) SetWindowSize(w, h int) {
 	m.maxWidth = w
 	m.maxHeight = h
 	m.viewport.Width = m.maxWidth
-	m.help.Width = m.maxWidth / 2
 	m.tape.SetWindowSize(w, h)
 	m.ui.SetWindowSize(w, h)
 }
@@ -281,8 +270,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, ui.Keys.Quit):
 			// don't tea.Quit, let the UI finish
 			m.interrupt()
-		case key.Matches(msg, ui.Keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
 		}
 
 		s, cmd := m.ui.Spinner.Update(msg)
@@ -346,6 +333,18 @@ func (m *Model) render() {
 	}
 }
 
+func (m *Model) viewChrome() string {
+	statusBuf := new(bytes.Buffer)
+	m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos)
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Bottom,
+		lipgloss.NewStyle().
+			MaxWidth(m.maxWidth).
+			Render(statusBuf.String()),
+	)
+}
+
 func (m *Model) View() string {
 	if m.finished {
 		// print nothing on exit; the outer render loop will call Print one last
@@ -353,23 +352,8 @@ func (m *Model) View() string {
 		return ""
 	}
 
-	helpView := m.help.View(ui.Keys)
-
-	helpSep := " "
-	widthMinusHelp := m.maxWidth - lipgloss.Width(helpView)
-	widthMinusHelp -= len(helpSep)
-
-	statusBuf := new(bytes.Buffer)
-	m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos, helpView)
-
-	footer := lipgloss.JoinHorizontal(
-		lipgloss.Bottom,
-		lipgloss.NewStyle().
-			MaxWidth(widthMinusHelp).
-			Render(statusBuf.String()),
-	)
-
-	chromeHeight := lipgloss.Height(footer)
+	chrome := m.viewChrome()
+	chromeHeight := lipgloss.Height(chrome)
 
 	max := m.maxHeight - chromeHeight
 	m.viewport.Height = m.contentHeight
@@ -377,17 +361,21 @@ func (m *Model) View() string {
 		m.viewport.Height = max
 	}
 
-	output := m.viewport.View()
-	if output == "\n" {
-		output = ""
-	}
+	buf := new(bytes.Buffer)
+	m.Print(buf)
+
+	output := buf.String() //m.viewport.View()
+	// if output == "\n" {
+	// 	output = ""
+	// }
+	output = strings.TrimRight(output, "\n")
 	if output == "" {
-		return footer
+		return chrome
 	}
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		output,
-		footer,
+		chrome,
 	)
 }

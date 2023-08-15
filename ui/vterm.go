@@ -145,7 +145,7 @@ func (term *Vterm) Bytes(offset, height int) []byte {
 	buf.Reset()
 
 	var lines int
-	for row, line := range term.vt.Content {
+	for row := range term.vt.Content {
 		if row < offset {
 			continue
 		}
@@ -154,21 +154,8 @@ func (term *Vterm) Bytes(offset, height int) []byte {
 		}
 
 		buf.WriteString(term.Prefix)
-
-		var lastFormat vt100.Format
-
-		for col, r := range line {
-			f := term.vt.Format[row][col]
-
-			if f != lastFormat {
-				lastFormat = f
-				buf.Write([]byte(renderFormat(f)))
-			}
-
-			buf.Write([]byte(string(r)))
-		}
-
-		buf.Write([]byte(reset + "\n"))
+		term.vt.RenderLine(buf, row)
+		fmt.Fprintln(buf)
 		lines++
 
 		if row > used {
@@ -197,7 +184,7 @@ func (term *Vterm) LastLine() string {
 
 			if f != lastFormat {
 				lastFormat = f
-				buf.Write([]byte(renderFormat(f)))
+				buf.Write([]byte(f.Render()))
 			}
 
 			buf.Write([]byte(string(r)))
@@ -231,58 +218,4 @@ func (term *Vterm) Print(w io.Writer) error {
 	}
 
 	return nil
-}
-
-func renderFormat(f vt100.Format) string {
-	styles := []string{}
-	if f.Fg != nil {
-		styles = append(styles, f.Fg.Sequence(false))
-	}
-	if f.Bg != nil {
-		styles = append(styles, f.Bg.Sequence(true))
-	}
-
-	switch f.Intensity {
-	case vt100.Bold:
-		styles = append(styles, termenv.BoldSeq)
-	case vt100.Faint:
-		styles = append(styles, termenv.FaintSeq)
-	}
-
-	if f.Italic {
-		styles = append(styles, termenv.ItalicSeq)
-	}
-
-	if f.Underline {
-		styles = append(styles, termenv.UnderlineSeq)
-	}
-
-	if f.Blink {
-		styles = append(styles, termenv.BlinkSeq)
-	}
-
-	if f.Reverse {
-		styles = append(styles, termenv.ReverseSeq)
-	}
-
-	if f.Conceal {
-		styles = append(styles, "8")
-	}
-
-	if f.CrossOut {
-		styles = append(styles, termenv.CrossOutSeq)
-	}
-
-	if f.Overline {
-		styles = append(styles, termenv.OverlineSeq)
-	}
-
-	var res string
-	if f.Reset || f == (vt100.Format{}) {
-		res = reset
-	}
-	if len(styles) > 0 {
-		res += fmt.Sprintf("%s%sm", termenv.CSI, strings.Join(styles, ";"))
-	}
-	return res
 }

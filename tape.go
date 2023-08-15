@@ -11,6 +11,7 @@ import (
 
 	"github.com/muesli/termenv"
 	"github.com/vito/progrock/ui"
+	"github.com/vito/vt100"
 	"golang.org/x/exp/slices"
 )
 
@@ -19,6 +20,9 @@ import (
 type Tape struct {
 	// order to display vertices
 	order []string
+
+	// zoomed vertices
+	zoomed map[string]*vt100.VT100
 
 	// raw vertex/group state from the event stream
 	vertexes map[string]*Vertex
@@ -105,6 +109,7 @@ func NewTape() *Tape {
 		vertex2groups:  make(map[string]map[string]struct{}),
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
+		zoomed:         make(map[string]*vt100.VT100),
 
 		// for explicitness: default to unbounded screen size
 		width:  -1,
@@ -143,6 +148,16 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		} else {
 			tape.vertexes[v.Id] = v
 		}
+
+		if v.Zoomed {
+			_, found := tape.zoomed[v.Id]
+			if !found {
+				h := tape.height - 2 // TODO align with chrome
+				w := tape.width
+				tape.zoomed[v.Id] = vt100.NewVT100(h, w)
+				resize(v.Id, w, h)
+			}
+		}
 	}
 
 	for _, t := range status.Tasks {
@@ -161,8 +176,13 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	}
 
 	for _, l := range status.Logs {
-		sink := tape.vertexLogs(l.Vertex)
-		_, err := sink.Write(l.Data)
+		var w io.Writer
+		if t, found := tape.zoomed[l.Vertex]; found {
+			w = t
+		} else {
+			w = tape.vertexLogs(l.Vertex)
+		}
+		_, err := w.Write(l.Data)
 		if err != nil {
 			return fmt.Errorf("write logs: %w", err)
 		}
@@ -447,6 +467,10 @@ func (tape *Tape) SetWindowSize(w, h int) {
 	for _, l := range tape.logs {
 		l.SetWidth(w)
 	}
+	for vId, t := range tape.zoomed {
+		t.Resize(h-2, w)    // TODO match chrome height
+		resize(vId, w, h-2) // TODO match chrome height
+	}
 	tape.globalLogs.SetWidth(w)
 	tape.l.Unlock()
 }
@@ -470,7 +494,9 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	defer tape.l.Unlock()
 
 	var err error
-	if tape.focus {
+	if len(tape.zoomed) > 0 {
+		err = tape.renderZoomed(w, u)
+	} else if tape.focus {
 		err = tape.renderTree(w, u)
 	} else {
 		err = tape.renderDAG(w, u)
@@ -481,6 +507,40 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 	tape.globalLogs.SetHeight(10)
 	fmt.Fprint(w, tape.globalLogs.View())
+
+	return nil
+}
+
+func (tape *Tape) IsZoomed() bool {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	return len(tape.zoomed) > 0
+}
+
+func (tape *Tape) renderZoomed(w io.Writer, u *UI) error {
+	for _, t := range tape.zoomed {
+		// used := t.UsedHeight()
+		// if used == 0 {
+		// 	return nil
+		// }
+
+		for row := range t.Content {
+			if err := t.RenderLine(w, row); err != nil {
+				return err
+			}
+
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+
+			// 			if row > used {
+			// 				break
+			// 			}
+		}
+
+		// height, cols, err := pty.Getsize(os.Stdin)
+		// fmt.Fprintln(w, "TW", tape.width, "TH", tape.height, "LEN", len(t.Content), "WIN", height, cols, err)
+	}
 
 	return nil
 }

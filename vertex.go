@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -37,8 +38,39 @@ func Internal() VertexOpt {
 	}
 }
 
-// Focused marks the vertex as focused, indicating it should be featured more
-// prominently in the UI.
+// ResizeFunc is a function that gets called when the vertex's zoomed pane
+// resizes.
+type ResizeFunc func(w, h int) error
+
+var (
+	// what's a little global state between friends?
+	resizers = map[string]ResizeFunc{}
+	sizersL  = new(sync.Mutex)
+)
+
+func resize(vId string, w, h int) error {
+	sizersL.Lock()
+	defer sizersL.Unlock()
+	resize, ok := resizers[vId]
+	if !ok {
+		return nil
+	}
+	return resize(w, h)
+}
+
+// Zoomed marks the vertex as zoomed, indicating it should take up as much
+// screen space as possible.
+func Zoomed(resize ResizeFunc) VertexOpt {
+	return func(vertex *Vertex) {
+		sizersL.Lock()
+		resizers[vertex.Id] = resize
+		sizersL.Unlock()
+		vertex.Zoomed = true
+	}
+}
+
+// Focused marks the vertex as focused, indicating it should be shown in the UI
+// when in focus mode.
 func Focused() VertexOpt {
 	return func(vertex *Vertex) {
 		vertex.Focused = true

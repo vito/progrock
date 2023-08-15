@@ -100,6 +100,11 @@ message Vertex {
   // be used to mark the command that actually "does the thing" - runs the
   // tests, does a build, whatever.
   bool focused = 11;
+  // Zoomed indicates that this vertex should take up as much
+  // screen real estate as possible. For example, this might
+  // be used for running an interactive shell, or running
+  // anything where there is a single primary output.
+  bool zoomed = 12;
 }
 
 // VertexTask is a task that a vertex is performing.
