@@ -38,6 +38,8 @@ func NewVterm() *Vterm {
 	vt.AutoResizeX = true
 	// grow vterm height forever so we never lose content
 	vt.AutoResizeY = true
+	// avoid rendering cursor
+	vt.PagerMode = true
 	if debugVterm {
 		vt.DebugLogs = os.Stderr
 	}
@@ -155,7 +157,6 @@ func (term *Vterm) Bytes(offset, height int) []byte {
 
 		buf.WriteString(term.Prefix)
 		term.vt.RenderLine(buf, row)
-		fmt.Fprintln(buf)
 		lines++
 
 		if row > used {

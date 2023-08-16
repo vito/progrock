@@ -7,7 +7,6 @@ require (
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/charmbracelet/lipgloss v0.7.1
-	github.com/creack/pty v1.1.18
 	github.com/docker/go-units v0.5.0
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776
 	github.com/jonboulle/clockwork v0.4.0
@@ -16,7 +15,7 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/sebdah/goldie/v2 v2.5.3
 	github.com/stretchr/testify v1.8.2
-	github.com/vito/vt100 v0.1.3-0.20230815234728-4bf404a89824
+	github.com/vito/vt100 v0.1.3-0.20230816003058-2693b5af5684
 	github.com/zmb3/spotify/v2 v2.3.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.7.0

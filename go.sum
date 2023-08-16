@@ -61,8 +61,6 @@ github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDk
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 h1:q2hJAaP1k2wIvVRd/hEHD7lacgqrCPS+k8g1MndzfWY=
 github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81/go.mod h1:YynlIjWYF8myEu6sdkwKIvGQq+cOckRm6So2avqoYAk=
-github.com/creack/pty v1.1.18 h1:n56/Zwd5o6whRC5PMGretI4IdRLlmBXYNjScPaBgsbY=
-github.com/creack/pty v1.1.18/go.mod h1:MOBLtS5ELjhRRrroQr9kyvTxUAFNvYEK993ew/Vr4O4=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -193,8 +191,8 @@ github.com/vektah/gqlparser/v2 v2.5.6 h1:Ou14T0N1s191eRMZ1gARVqohcbe1e8FrcONScsq
 github.com/vektah/gqlparser/v2 v2.5.6/go.mod h1:z8xXUff237NntSuH8mLFijZ+1tjV1swDbpDqjJmk6ME=
 github.com/vito/dagger/sdk/go v0.0.0-20230813182437-0a19df361003 h1:MhHnp8Wn6UHFCYQ8B1kGjN0tXxBO42JppuI3icuF/No=
 github.com/vito/dagger/sdk/go v0.0.0-20230813182437-0a19df361003/go.mod h1:3OYDaif9MH2ajxX+oLp8oeRLDEfz2pIjpqis/j4GkuY=
-github.com/vito/vt100 v0.1.3-0.20230815234728-4bf404a89824 h1:V0nx8qGuzjN1IdtGOJUZizr2+GOqEQp3Qr27T0uYGYE=
-github.com/vito/vt100 v0.1.3-0.20230815234728-4bf404a89824/go.mod h1:ytK5/43vb2mKuLTXO+zriCv0lEt5RICwtixszOKV8N8=
+github.com/vito/vt100 v0.1.3-0.20230816003058-2693b5af5684 h1:nPAGz/nLX6aYPxvUU1YdnoTz2Cwb1vfxaxgaejXIdR8=
+github.com/vito/vt100 v0.1.3-0.20230816003058-2693b5af5684/go.mod h1:ytK5/43vb2mKuLTXO+zriCv0lEt5RICwtixszOKV8N8=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

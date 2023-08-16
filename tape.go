@@ -529,10 +529,6 @@ func (tape *Tape) renderZoomed(w io.Writer, u *UI) error {
 				return err
 			}
 
-			if _, err := fmt.Fprintln(w); err != nil {
-				return err
-			}
-
 			// 			if row > used {
 			// 				break
 			// 			}
