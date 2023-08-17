@@ -147,6 +147,7 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, 
 	displaying := new(sync.WaitGroup)
 	displaying.Add(1)
 	go func() {
+		defer interrupt() // TODO this feels a little backwards
 		defer displaying.Done()
 		_, err := prog.Run()
 		if err != nil {
