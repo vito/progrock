@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 
@@ -27,8 +26,6 @@ type Vterm struct {
 	viewBuf *bytes.Buffer
 }
 
-var debugVterm = os.Getenv("_DEBUG_VTERM") != ""
-
 func NewVterm() *Vterm {
 	vt := vt100.NewVT100(
 		1,  // start with 1 row
@@ -38,11 +35,6 @@ func NewVterm() *Vterm {
 	vt.AutoResizeX = true
 	// grow vterm height forever so we never lose content
 	vt.AutoResizeY = true
-	// avoid rendering cursor
-	vt.PagerMode = true
-	if debugVterm {
-		vt.DebugLogs = os.Stderr
-	}
 	return &Vterm{
 		vt:      vt,
 		viewBuf: new(bytes.Buffer),

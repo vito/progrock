@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/vt100"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -40,31 +41,30 @@ func Internal() VertexOpt {
 
 // ResizeFunc is a function that gets called when the vertex's zoomed pane
 // resizes.
-type ResizeFunc func(w, h int) error
+type TermSetupFunc func(*vt100.VT100)
 
 var (
 	// what's a little global state between friends?
-	resizers = map[string]ResizeFunc{}
-	sizersL  = new(sync.Mutex)
+	termSetups  = map[string]TermSetupFunc{}
+	termSetupsL = new(sync.Mutex)
 )
 
-func resize(vId string, w, h int) error {
-	sizersL.Lock()
-	defer sizersL.Unlock()
-	resize, ok := resizers[vId]
-	if !ok {
-		return nil
+func setupTerm(vId string, vt *vt100.VT100) {
+	termSetupsL.Lock()
+	defer termSetupsL.Unlock()
+	setup, ok := termSetups[vId]
+	if ok {
+		setup(vt)
 	}
-	return resize(w, h)
 }
 
 // Zoomed marks the vertex as zoomed, indicating it should take up as much
 // screen space as possible.
-func Zoomed(resize ResizeFunc) VertexOpt {
+func Zoomed(setup TermSetupFunc) VertexOpt {
 	return func(vertex *Vertex) {
-		sizersL.Lock()
-		resizers[vertex.Id] = resize
-		sizersL.Unlock()
+		termSetupsL.Lock()
+		termSetups[vertex.Id] = setup
+		termSetupsL.Unlock()
 		vertex.Zoomed = true
 	}
 }

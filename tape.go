@@ -154,8 +154,9 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 			if !found {
 				h := tape.height - 2 // TODO align with chrome
 				w := tape.width
-				tape.zoomed[v.Id] = vt100.NewVT100(h, w)
-				resize(v.Id, w, h)
+				vt := vt100.NewVT100(h, w)
+				tape.zoomed[v.Id] = vt
+				setupTerm(v.Id, vt)
 			}
 		}
 	}
@@ -467,9 +468,8 @@ func (tape *Tape) SetWindowSize(w, h int) {
 	for _, l := range tape.logs {
 		l.SetWidth(w)
 	}
-	for vId, t := range tape.zoomed {
-		t.Resize(h-2, w)    // TODO match chrome height
-		resize(vId, w, h-2) // TODO match chrome height
+	for _, t := range tape.zoomed {
+		t.Resize(h-2, w) // TODO match chrome height
 	}
 	tape.globalLogs.SetWidth(w)
 	tape.l.Unlock()
