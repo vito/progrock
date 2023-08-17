@@ -75,7 +75,7 @@ func main() {
 	wg := new(sync.WaitGroup)
 
 dance:
-	for v := 0; v < 10; v++ {
+	for v := 0; v < 20; v++ {
 		v := v
 
 		group := rec.WithGroup(fmt.Sprintf("group %d", v))
@@ -107,7 +107,7 @@ dance:
 			}
 		}()
 
-		subVtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
+		subCtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
 
 		multiGroup := group.Vertex(
 			digest.Digest(fmt.Sprintf("log-and-count-%d", v%2)),
@@ -121,7 +121,7 @@ dance:
 
 			time.Sleep(500 * time.Millisecond)
 
-			for i := int64(0); subVtx.Err() == nil; i++ {
+			for i := int64(0); subCtx.Err() == nil; i++ {
 				if i%2 == 0 {
 					fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
 				} else {
@@ -130,7 +130,7 @@ dance:
 
 				select {
 				case <-time.After(500 * time.Millisecond):
-				case <-subVtx.Done():
+				case <-subCtx.Done():
 				}
 			}
 
@@ -144,11 +144,11 @@ dance:
 
 		if v%2 == 0 {
 			subGroup := group.WithGroup(fmt.Sprintf("sub-group %d", v))
-			go cmdVtx(subVtx, subGroup, "sh", "-c", "echo hello")
+			go cmdVtx(subCtx, subGroup, "sh", "-c", "echo hello")
 		}
 
 		select {
-		case <-time.After(time.Second):
+		case <-time.After(500 * time.Millisecond):
 		case <-ctx.Done():
 			break dance
 		}
