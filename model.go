@@ -354,13 +354,13 @@ func (m *Model) View() string {
 	}
 
 	chrome := m.viewChrome()
-	chromeHeight := lipgloss.Height(chrome)
+	// chromeHeight := lipgloss.Height(chrome)
 
-	max := m.maxHeight - chromeHeight
-	m.viewport.Height = m.contentHeight
-	if m.viewport.Height+chromeHeight > m.maxHeight {
-		m.viewport.Height = max
-	}
+	// max := m.maxHeight - chromeHeight
+	// m.viewport.Height = m.contentHeight
+	// if m.viewport.Height+chromeHeight > m.maxHeight {
+	// 	m.viewport.Height = max
+	// }
 
 	buf := new(bytes.Buffer)
 	m.Print(buf)
