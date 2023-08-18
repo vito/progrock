@@ -494,7 +494,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	defer tape.l.Unlock()
 
 	var err error
-	if len(tape.zoomed) > 0 {
+	if tape.isZoomed() {
 		err = tape.renderZoomed(w, u)
 	} else if tape.focus {
 		err = tape.renderTree(w, u)
@@ -511,10 +511,14 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) IsZoomed() bool {
-	tape.l.Lock()
-	defer tape.l.Unlock()
-	return len(tape.zoomed) > 0
+func (tape *Tape) isZoomed() bool {
+	for vid := range tape.zoomed {
+		if tape.vertexes[vid].Completed == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (tape *Tape) renderZoomed(w io.Writer, u *UI) error {
