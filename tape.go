@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/muesli/termenv"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock/ui"
-	"github.com/vito/vt100"
 	"golang.org/x/exp/slices"
 )
 
@@ -22,7 +22,7 @@ type Tape struct {
 	order []string
 
 	// zoomed vertices
-	zoomed map[string]*vt100.VT100
+	zoomed map[string]*midterm.Terminal
 
 	// raw vertex/group state from the event stream
 	vertexes map[string]*Vertex
@@ -109,7 +109,7 @@ func NewTape() *Tape {
 		vertex2groups:  make(map[string]map[string]struct{}),
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
-		zoomed:         make(map[string]*vt100.VT100),
+		zoomed:         make(map[string]*midterm.Terminal),
 
 		// for explicitness: default to unbounded screen size
 		width:  -1,
@@ -154,7 +154,7 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 			if !found {
 				h := tape.height - 2 // TODO align with chrome
 				w := tape.width
-				vt := vt100.NewVT100(h, w)
+				vt := midterm.NewTerminal(h, w)
 				tape.zoomed[v.Id] = vt
 				setupTerm(v.Id, vt)
 			}

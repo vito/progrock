@@ -15,7 +15,7 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/sebdah/goldie/v2 v2.5.3
 	github.com/stretchr/testify v1.8.2
-	github.com/vito/vt100 v0.1.3-0.20230817231617-967867b9de1f
+	github.com/vito/midterm v0.1.0
 	github.com/zmb3/spotify/v2 v2.3.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.7.0
@@ -57,5 +57,3 @@ require (
 )
 
 replace dagger.io/dagger => github.com/vito/dagger/sdk/go v0.0.0-20230817151820-757554a40772
-
-// replace github.com/vito/vt100 => ./vt100

@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/opencontainers/go-digest"
-	"github.com/vito/vt100"
+	"github.com/vito/midterm"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -41,7 +41,7 @@ func Internal() VertexOpt {
 
 // ResizeFunc is a function that gets called when the vertex's zoomed pane
 // resizes.
-type TermSetupFunc func(*vt100.VT100)
+type TermSetupFunc func(*midterm.Terminal)
 
 var (
 	// what's a little global state between friends?
@@ -49,7 +49,7 @@ var (
 	termSetupsL = new(sync.Mutex)
 )
 
-func setupTerm(vId string, vt *vt100.VT100) {
+func setupTerm(vId string, vt *midterm.Terminal) {
 	termSetupsL.Lock()
 	defer termSetupsL.Unlock()
 	setup, ok := termSetups[vId]

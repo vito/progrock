@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/vito/vt100"
+	"github.com/vito/midterm"
 )
 
 type Vterm struct {
@@ -21,13 +21,13 @@ type Vterm struct {
 
 	Prefix string
 
-	vt *vt100.VT100
+	vt *midterm.Terminal
 
 	viewBuf *bytes.Buffer
 }
 
 func NewVterm() *Vterm {
-	vt := vt100.NewVT100(
+	vt := midterm.NewTerminal(
 		1,  // start with 1 row
 		80, // pre-allocate 80 columns
 	)
@@ -169,7 +169,7 @@ func (term *Vterm) LastLine() string {
 
 	var lastLine string
 	for row := used - 1; row >= 0; row-- {
-		var lastFormat vt100.Format
+		var lastFormat midterm.Format
 
 		buf := new(strings.Builder)
 		for col, r := range term.vt.Content[row] {
