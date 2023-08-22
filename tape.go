@@ -52,6 +52,7 @@ type Tape struct {
 	// UI config
 	verboseEdges  bool // show edges between vertexes in the same group
 	showInternal  bool // show internal vertexes
+	revealErrored bool // show errored vertexes no matter what
 	showAllOutput bool // show output even for completed vertexes
 	focus         bool // only show 'focused' vertex output, condensing the rest
 
@@ -435,6 +436,16 @@ func (tape *Tape) ShowInternal(show bool) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	tape.showInternal = show
+}
+
+// RevealErrored sets whether to show errored vertexes even when they would
+// otherwise not be shown (i.e. internal, or focusing). You may want to set
+// this when debugging, or for features that might break when bootstrapping
+// before a higher level error can be shown.
+func (tape *Tape) RevealErrored(reveal bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.revealErrored = reveal
 }
 
 // ShowAllOutput sets whether to show output even for successful vertexes.
@@ -827,8 +838,9 @@ func (tape *Tape) bouncer() *bouncer {
 		vertices:      tape.vertexes,
 		vertex2groups: tape.vertex2groups,
 
-		focus:        tape.focus,
-		showInternal: tape.showInternal,
+		focus:         tape.focus,
+		showInternal:  tape.showInternal,
+		revealErrored: tape.revealErrored,
 	}
 }
 
@@ -886,8 +898,9 @@ type bouncer struct {
 	group2vertexes map[string]map[string]struct{}
 	vertex2groups  map[string]map[string]struct{}
 
-	focus        bool
-	showInternal bool
+	focus         bool
+	showInternal  bool
+	revealErrored bool
 }
 
 func (b *bouncer) Groups(vtx *Vertex) []*Group {
@@ -909,15 +922,14 @@ func (b *bouncer) Groups(vtx *Vertex) []*Group {
 }
 
 func (b *bouncer) IsVisible(vtx *Vertex) bool {
+	if vtx.Error != nil && b.revealErrored {
+		// show errored vertices no matter what
+		return true
+	}
+
 	if vtx.Internal && !b.showInternal {
 		// filter out internal vertices unless we're showing them
 		return false
-	}
-
-	if vtx.Error != nil {
-		// in general, show errored vertexes, except internal ones since they may
-		// already be captured and presented in a nicer manner instead
-		return true
 	}
 
 	if b.focus && !vtx.Focused {

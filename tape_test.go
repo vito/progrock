@@ -311,6 +311,29 @@ func TestInternalErrored(t *testing.T) {
 	testGolden(t, tape)
 }
 
+func TestUnfocusedErrored(t *testing.T) {
+	t.Run("no reveal", func(t *testing.T) {
+		tape := progrock.NewTape()
+		tape.Focus(true)
+
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a", progrock.Internal()).Done(fmt.Errorf("nope"))
+
+		testGolden(t, tape)
+	})
+
+	t.Run("with reveal", func(t *testing.T) {
+		tape := progrock.NewTape()
+		tape.Focus(true)
+		tape.RevealErrored(true)
+
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a", progrock.Internal()).Done(fmt.Errorf("nope"))
+
+		testGolden(t, tape)
+	})
+}
+
 func TestSingleDoneTasks(t *testing.T) {
 	tape := progrock.NewTape()
 
