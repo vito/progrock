@@ -40,6 +40,15 @@ func NewRecorder(w Writer, opts ...GroupOpt) *Recorder {
 
 // NewPassthroughRecorder creates a new Recorder which writes to the given
 // Writer, without initializing a group.
+//
+// Warning: every time I've used this so far, it has been a mistake. It
+// introduces a lot of footguns. Progrock expects there to be an outermost
+// "root" group without a blank name, and for there to never be any "orphaned"
+// vertices or groups, so if you start using the recorder for vertexes and
+// groups without initializing one you'll get unexpected behavior. In other
+// words, the only valid fully instantiated Recorder is one that has already
+// initialized and scoped into a RootGroup. Consider just having two "root"
+// groups instead, since they'll have different IDs anyway.
 func NewPassthroughRecorder(w Writer) *Recorder {
 	return newEmptyRecorder(w)
 }
