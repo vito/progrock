@@ -4,14 +4,19 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/creack/pty"
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock"
+	"golang.org/x/term"
 )
 
 func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...string) {
@@ -49,8 +54,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, true)
+	interactive := false
+	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, interactive)
 	defer stop()
+
+	// zoom vs. dag is either/or, so just comment this out
+	// demoZoom(prog, rec, interactive)
 
 	prog.Send(progrock.StatusInfoMsg{
 		Name:  "Foo",
@@ -157,4 +166,51 @@ dance:
 	wg.Wait()
 
 	rec.Close()
+}
+
+func demoZoom(prog *tea.Program, rec *progrock.Recorder, interactive bool) {
+	if !interactive {
+		// Set stdin in raw mode.
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			panic(err)
+		}
+		defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
+	}
+
+	rec.Vertex("zoomed", "zoom zoom", progrock.Zoomed(func(term *midterm.Terminal) {
+		p, err := pty.StartWithSize(exec.Command("htop"), &pty.Winsize{
+			Rows: uint16(term.Height),
+			Cols: uint16(term.Width),
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		term.ForwardRequests = os.Stdin
+		term.ForwardResponses = p
+
+		if !interactive {
+			go io.Copy(p, os.Stdin)
+		}
+
+		go io.Copy(term, p)
+
+		term.OnResize(func(rows, cols int) {
+			pty.Setsize(p, &pty.Winsize{
+				Rows: uint16(rows),
+				Cols: uint16(cols),
+			})
+		})
+	}))
+	go func() {
+		time.Sleep(10 * time.Second)
+
+		for i := 0; i < 10; i++ {
+			prog.Send(progrock.StatusInfoMsg{
+				Name:  fmt.Sprintf("More info %d", i),
+				Value: "https://example.com",
+			})
+		}
+	}()
 }
