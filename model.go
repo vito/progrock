@@ -125,21 +125,15 @@ func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo) error {
 	})
 }
 
-func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, tui bool) (*tea.Program, func()) {
-	model := ui.NewModel(tape, interrupt, w)
+func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, interactive bool) (*tea.Program, func()) {
+	model := ui.newModel(tape, interrupt, w)
 
-	opts := []tea.ProgramOption{
-		tea.WithOutput(w),
+	opts := []tea.ProgramOption{tea.WithOutput(w)}
 
-		// Progrock is non-interactive so that input can be passed straight through
-		// to e.g. an underlying command.
-		tea.WithInput(nil),
-	}
-
-	if tui {
-		// opts = append(opts, tea.WithMouseCellMotion())
+	if interactive {
+		opts = append(opts, tea.WithMouseCellMotion())
 	} else {
-		opts = append(opts, tea.WithoutRenderer())
+		opts = append(opts, tea.WithInput(nil))
 	}
 
 	prog := tea.NewProgram(model, opts...)
@@ -163,7 +157,7 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, 
 	}
 }
 
-func (ui *UI) NewModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *Model {
+func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *Model {
 	return &Model{
 		tape: tape,
 		ui:   ui,
@@ -176,6 +170,9 @@ func (ui *UI) NewModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *M
 		maxWidth:  80,
 		maxHeight: 24,
 		viewport:  viewport.New(80, 24),
+
+		contentBuf: new(bytes.Buffer),
+		chromeBuf:  new(bytes.Buffer),
 	}
 }
 
@@ -186,10 +183,17 @@ type Model struct {
 
 	interrupt func()
 
+	chrome       string
+	chromeHeight int
+
 	viewport      viewport.Model
 	maxWidth      int
 	maxHeight     int
 	contentHeight int
+
+	// buffers for async rendering so we're not constantly reallocating
+	chromeBuf  *bytes.Buffer
+	contentBuf *bytes.Buffer
 
 	statusInfos []StatusInfo
 
@@ -253,12 +257,11 @@ func (m *Model) vtermHeight() int {
 	return m.maxHeight / 3
 }
 
-// SetWindowSize is exposed so that the UI can be manually driven.
-func (m *Model) SetWindowSize(w, h int) {
+func (m *Model) setWindowSize(w, h int) {
 	m.maxWidth = w
 	m.maxHeight = h
 	m.viewport.Width = m.maxWidth
-	m.tape.SetWindowSize(w, h)
+	m.tape.SetWindowSize(w, h-m.chromeHeight)
 	m.ui.SetWindowSize(w, h)
 }
 
@@ -278,7 +281,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case tea.WindowSizeMsg:
-		m.SetWindowSize(msg.Width, msg.Height)
+		m.setWindowSize(msg.Width, msg.Height)
 
 	case StatusInfoMsg:
 		infos := append([]StatusInfo{}, m.statusInfos...)
@@ -319,15 +322,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) render() {
-	buf := new(bytes.Buffer)
-	m.Print(buf)
+	prevHeight := m.chromeHeight
 
-	content := strings.TrimRight(buf.String(), "\n")
+	m.chrome = m.viewChrome()
+	m.chromeHeight = lipgloss.Height(m.chrome)
+
+	if m.chromeHeight != prevHeight {
+		// resize tape (e.g. for zoomed vertex output)
+		m.setWindowSize(m.maxWidth, m.maxHeight)
+	}
+
+	m.contentBuf.Reset()
+	m.Print(m.contentBuf)
+	content := strings.TrimRight(m.contentBuf.String(), "\n")
+	m.contentHeight = lipgloss.Height(content)
 
 	atBottom := m.viewport.AtBottom()
 
 	m.viewport.SetContent(content)
-	m.contentHeight = lipgloss.Height(content)
+
+	max := m.maxHeight - m.chromeHeight
+	m.viewport.Height = m.contentHeight
+	if m.viewport.Height+m.chromeHeight > m.maxHeight {
+		m.viewport.Height = max
+	}
 
 	if atBottom {
 		m.viewport.GotoBottom()
@@ -335,14 +353,14 @@ func (m *Model) render() {
 }
 
 func (m *Model) viewChrome() string {
-	statusBuf := new(bytes.Buffer)
-	m.ui.RenderStatus(statusBuf, m.tape, m.statusInfos)
+	m.chromeBuf.Reset()
+	m.ui.RenderStatus(m.chromeBuf, m.tape, m.statusInfos)
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Bottom,
 		lipgloss.NewStyle().
 			MaxWidth(m.maxWidth).
-			Render(statusBuf.String()),
+			Render(m.chromeBuf.String()),
 	)
 }
 
@@ -353,30 +371,17 @@ func (m *Model) View() string {
 		return ""
 	}
 
-	chrome := m.viewChrome()
-	// chromeHeight := lipgloss.Height(chrome)
-
-	// max := m.maxHeight - chromeHeight
-	// m.viewport.Height = m.contentHeight
-	// if m.viewport.Height+chromeHeight > m.maxHeight {
-	// 	m.viewport.Height = max
-	// }
-
-	buf := new(bytes.Buffer)
-	m.Print(buf)
-
-	output := buf.String() //m.viewport.View()
-	// if output == "\n" {
-	// 	output = ""
-	// }
-	output = strings.TrimRight(output, "\n")
+	output := m.viewport.View()
+	if output == "\n" {
+		output = ""
+	}
 	if output == "" {
-		return chrome
+		return m.chrome
 	}
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		output,
-		chrome,
+		m.chrome,
 	)
 }

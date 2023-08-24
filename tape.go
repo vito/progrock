@@ -112,11 +112,10 @@ func NewTape() *Tape {
 		logs:           make(map[string]*ui.Vterm),
 		zoomed:         make(map[string]*midterm.Terminal),
 
-		// for explicitness: default to unbounded screen size
-		width:  -1,
-		height: -1,
-
-		// sane default before window size is known
+		// sane defaults before we have the real window size, since we might need
+		// to allocate a zoomed terminal before size info arrives
+		width:      80,
+		height:     24,
 		termHeight: 10,
 
 		globalLogs: ui.NewVterm(),
@@ -153,9 +152,7 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		if v.Zoomed {
 			_, found := tape.zoomed[v.Id]
 			if !found {
-				h := tape.height - 2 // TODO align with chrome
-				w := tape.width
-				vt := midterm.NewTerminal(h, w)
+				vt := midterm.NewTerminal(tape.height, tape.width)
 				tape.zoomed[v.Id] = vt
 				setupTerm(v.Id, vt)
 			}
@@ -480,7 +477,7 @@ func (tape *Tape) SetWindowSize(w, h int) {
 		l.SetWidth(w)
 	}
 	for _, t := range tape.zoomed {
-		t.Resize(h-2, w) // TODO match chrome height
+		t.Resize(h, w)
 	}
 	tape.globalLogs.SetWidth(w)
 	tape.l.Unlock()

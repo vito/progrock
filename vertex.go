@@ -53,7 +53,7 @@ func setupTerm(vId string, vt *midterm.Terminal) {
 	termSetupsL.Lock()
 	defer termSetupsL.Unlock()
 	setup, ok := termSetups[vId]
-	if ok {
+	if ok && setup != nil {
 		setup(vt)
 	}
 }
