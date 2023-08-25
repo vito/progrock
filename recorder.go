@@ -24,11 +24,20 @@ type Recorder struct {
 	groupsL sync.Mutex
 }
 
-// RootGroup is the name of the toplevel group, which is blank.
+// RootGroup is the name of the outermost group.
 //
-// This is a slight hack, but it gives reasonable meaning to an empty state
-// while sidestepping the issue of figuring out what the "root" name should be.
+// Its value is blank, since it should never really be shown in the UI, since
+// there isn't really a name that would make sense in all contexts. Instead the
+// Root group should just be given special treatment, in whatever way makes
+// sense to the user - for example, by only displaying its contents, as if each
+// of its children were at the top level.
 const RootGroup = ""
+
+// RootID is the static ID value set for all Root groups.
+//
+// Note: all Root groups MUST have the same ID, so that there are never
+// "multiple roots" - a truly unsettling concept.
+const RootID = "<root>"
 
 // NewRecorder creates a new Recorder which writes to the given Writer.
 //
@@ -200,7 +209,9 @@ func (recorder *Recorder) WithGroup(name string, opts ...GroupOpt) *Recorder {
 		g.Started = timestamppb.New(Clock.Now())
 	}
 
-	if g.Id == "" {
+	if name == RootGroup {
+		g.Id = RootID // invariant: all root groups MUST have the same ID
+	} else if g.Id == "" {
 		g.Id = fmt.Sprintf("%s@%d", name, g.Started.AsTime().UnixNano())
 	}
 
