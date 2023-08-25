@@ -6,7 +6,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/creack/pty v1.1.18
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/vito/midterm v0.1.0
+	github.com/vito/midterm v0.1.1
 	github.com/vito/progrock v0.9.0
 	golang.org/x/term v0.11.0
 )
