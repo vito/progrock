@@ -112,10 +112,12 @@ func NewTape() *Tape {
 		logs:           make(map[string]*ui.Vterm),
 		zoomed:         make(map[string]*midterm.Terminal),
 
-		// sane defaults before we have the real window size, since we might need
-		// to allocate a zoomed terminal before size info arrives
-		width:      80,
-		height:     24,
+		// default to unbounded screen size so we don't arbitrarily wrap log output
+		// when no size is given
+		width:  -1,
+		height: -1,
+
+		// sane default before window size is known
 		termHeight: 10,
 
 		globalLogs: ui.NewVterm(),
@@ -149,29 +151,16 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 			tape.vertexes[v.Id] = v
 		}
 
-		if v.Zoomed {
-			_, found := tape.zoomed[v.Id]
-			if !found {
-				vt := midterm.NewTerminal(tape.height, tape.width)
-				tape.zoomed[v.Id] = vt
-				setupTerm(v.Id, vt)
-			}
+		_, isZoomed := tape.zoomed[v.Id]
+		if v.Zoomed && !isZoomed {
+			tape.zoom(v)
+		} else if isZoomed {
+			tape.unzoom(v)
 		}
 	}
 
 	for _, t := range status.Tasks {
-		tasks := tape.tasks[t.Vertex]
-		var updated bool
-		for i, task := range tasks {
-			if task.Name == t.Name {
-				tasks[i] = t
-				updated = true
-			}
-		}
-		if !updated {
-			tasks = append(tasks, t)
-			tape.tasks[t.Vertex] = tasks
-		}
+		tape.recordTask(t)
 	}
 
 	for _, l := range status.Logs {
@@ -214,6 +203,40 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	}
 
 	return nil
+}
+
+func (tape *Tape) zoom(v *Vertex) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	var vt *midterm.Terminal
+	if tape.height == -1 || tape.width != -1 {
+		vt = midterm.NewAutoResizingTerminal()
+	} else {
+		vt = midterm.NewTerminal(tape.height, tape.width)
+	}
+	tape.zoomed[v.Id] = vt
+	setupTerm(v.Id, vt)
+}
+
+func (tape *Tape) unzoom(vtx *Vertex) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	delete(tape.zoomed, vtx.Id)
+}
+
+func (tape *Tape) recordTask(t *VertexTask) {
+	tasks := tape.tasks[t.Vertex]
+	var updated bool
+	for i, task := range tasks {
+		if task.Name == t.Name {
+			tasks[i] = t
+			updated = true
+		}
+	}
+	if !updated {
+		tasks = append(tasks, t)
+		tape.tasks[t.Vertex] = tasks
+	}
 }
 
 func (tape *Tape) log(msg *Message) {
