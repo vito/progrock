@@ -206,8 +206,6 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 }
 
 func (tape *Tape) zoom(v *Vertex) {
-	tape.l.Lock()
-	defer tape.l.Unlock()
 	var vt *midterm.Terminal
 	if tape.height == -1 || tape.width != -1 {
 		vt = midterm.NewAutoResizingTerminal()
@@ -219,8 +217,6 @@ func (tape *Tape) zoom(v *Vertex) {
 }
 
 func (tape *Tape) unzoom(vtx *Vertex) {
-	tape.l.Lock()
-	defer tape.l.Unlock()
 	delete(tape.zoomed, vtx.Id)
 }
 
