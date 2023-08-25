@@ -540,7 +540,8 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 
 func (tape *Tape) isZoomed() bool {
 	for vid := range tape.zoomed {
-		if tape.vertexes[vid].Completed == nil {
+		v := tape.vertexes[vid]
+		if v.Started != nil && v.Completed == nil {
 			return true
 		}
 	}
@@ -549,27 +550,27 @@ func (tape *Tape) isZoomed() bool {
 }
 
 func (tape *Tape) renderZoomed(w io.Writer, u *UI) error {
-	for _, t := range tape.zoomed {
-		// used := t.UsedHeight()
-		// if used == 0 {
-		// 	return nil
-		// }
-
-		for row := range t.Content {
-			if err := t.RenderLine(w, row); err != nil {
-				return err
-			}
-
-			// 			if row > used {
-			// 				break
-			// 			}
+	var firstZoomed *Vertex
+	var firstZoomedTerm *midterm.Terminal
+	for vId, t := range tape.zoomed {
+		v, found := tape.vertexes[vId]
+		if !found {
+			// should be impossible
+			continue
 		}
 
-		// height, cols, err := pty.Getsize(os.Stdin)
-		// fmt.Fprintln(w, "TW", tape.width, "TH", tape.height, "LEN", len(t.Content), "WIN", height, cols, err)
+		if v.Started == nil {
+			// just being defensive, theoretically this is a valid state
+			continue
+		}
+
+		if firstZoomed == nil || v.Started.AsTime().Before(firstZoomed.Started.AsTime()) {
+			firstZoomed = v
+			firstZoomedTerm = t
+		}
 	}
 
-	return nil
+	return firstZoomedTerm.Render(w)
 }
 
 func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
