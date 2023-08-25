@@ -54,12 +54,30 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	interactive := false
-	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, interactive)
+	runningInteractiveApp := true
+	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, !runningInteractiveApp)
 	defer stop()
 
-	// zoom vs. dag is either/or, so just comment this out
-	// demoZoom(prog, rec, interactive)
+	if runningInteractiveApp {
+		// Set stdin in raw mode.
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			panic(err)
+		}
+		defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
+
+		demoZoom(prog, rec, runningInteractiveApp)
+
+		go func() {
+			for i := 0; i < 10; i++ {
+				time.Sleep(1 * time.Second)
+				prog.Send(progrock.StatusInfoMsg{
+					Name:  fmt.Sprintf("More info %d", i),
+					Value: "https://example.com",
+				})
+			}
+		}()
+	}
 
 	prog.Send(progrock.StatusInfoMsg{
 		Name:  "Foo",
@@ -168,18 +186,12 @@ dance:
 	rec.Close()
 }
 
-func demoZoom(prog *tea.Program, rec *progrock.Recorder, interactive bool) {
-	if !interactive {
-		// Set stdin in raw mode.
-		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-		if err != nil {
-			panic(err)
-		}
-		defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
-	}
+func demoZoom(prog *tea.Program, rec *progrock.Recorder, runningInteractiveApp bool) {
+	cmd := exec.Command("htop")
 
-	rec.Vertex("zoomed", "zoom zoom", progrock.Zoomed(func(term *midterm.Terminal) {
-		p, err := pty.StartWithSize(exec.Command("htop"), &pty.Winsize{
+	var vtx *progrock.VertexRecorder
+	vtx = rec.Vertex("zoomed", "zoom zoom", progrock.Zoomed(func(term *midterm.Terminal) {
+		p, err := pty.StartWithSize(cmd, &pty.Winsize{
 			Rows: uint16(term.Height),
 			Cols: uint16(term.Width),
 		})
@@ -187,10 +199,14 @@ func demoZoom(prog *tea.Program, rec *progrock.Recorder, interactive bool) {
 			panic(err)
 		}
 
+		go func() {
+			vtx.Done(cmd.Wait())
+		}()
+
 		term.ForwardRequests = os.Stdin
 		term.ForwardResponses = p
 
-		if !interactive {
+		if runningInteractiveApp {
 			go io.Copy(p, os.Stdin)
 		}
 
@@ -203,14 +219,4 @@ func demoZoom(prog *tea.Program, rec *progrock.Recorder, interactive bool) {
 			})
 		})
 	}))
-	go func() {
-		time.Sleep(10 * time.Second)
-
-		for i := 0; i < 10; i++ {
-			prog.Send(progrock.StatusInfoMsg{
-				Name:  fmt.Sprintf("More info %d", i),
-				Value: "https://example.com",
-			})
-		}
-	}()
 }
