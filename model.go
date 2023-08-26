@@ -6,14 +6,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"os"
-	"os/signal"
-	"runtime/pprof"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"text/template"
 	"time"
 
@@ -22,7 +18,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/creack/pty"
 	"github.com/muesli/termenv"
 	"github.com/vito/progrock/tmpl"
 	"github.com/vito/progrock/ui"
@@ -138,7 +133,6 @@ type swappableWriter struct {
 }
 
 func (w *swappableWriter) Swap(to io.Writer) {
-	log.Println("SW SWAP", to)
 	w.Lock()
 	w.override = to
 	w.Unlock()
@@ -148,14 +142,12 @@ func init() {
 }
 
 func (w *swappableWriter) Restore() {
-	log.Println("SW RESTORE")
 	w.Lock()
 	w.override = nil
 	w.Unlock()
 }
 
 func (w *swappableWriter) Write(p []byte) (int, error) {
-	log.Println("SW WRITE", strconv.Quote(string(p))
 	w.Lock()
 	defer w.Unlock()
 	if w.override != nil {
@@ -165,27 +157,16 @@ func (w *swappableWriter) Write(p []byte) (int, error) {
 }
 
 func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape) (*tea.Program, func()) {
-	p, t, err := pty.Open()
-	if err != nil {
-		panic(err)
-	}
+	// NOTE: establish color cache before we start consuming stdin
+	out := termenv.NewOutput(os.Stderr, termenv.WithColorCache(true))
 
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		panic(err)
 	}
 
-	onQuit := make(chan os.Signal, 1)
-	signal.Notify(onQuit, syscall.SIGQUIT)
-
-	go func() {
-		<-onQuit
-		_ = term.Restore(int(os.Stdin.Fd()), oldState) // Best effort.
-		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
-		os.Exit(1)
-	}()
-
-	sw := &swappableWriter{original: p}
+	inR, inW := io.Pipe()
+	sw := &swappableWriter{original: inW}
 	go io.Copy(sw, os.Stdin)
 
 	model := ui.newModel(tape, interrupt, sw)
@@ -200,8 +181,8 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape) (*tea.Program
 
 	opts := []tea.ProgramOption{
 		tea.WithMouseCellMotion(),
-		tea.WithInput(t),
-		tea.WithOutput(os.Stderr),
+		tea.WithInput(inR),
+		tea.WithOutput(out),
 	}
 
 	prog := tea.NewProgram(model, opts...)
@@ -213,7 +194,7 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape) (*tea.Program
 		defer displaying.Done()
 		_, err := prog.Run()
 		if err != nil {
-			fmt.Fprintf(w, "%s\n", termenv.String(fmt.Sprintf("display error: %s", err)).Foreground(termenv.ANSIRed))
+			fmt.Fprintf(out, "%s\n", termenv.String(fmt.Sprintf("display error: %s", err)).Foreground(termenv.ANSIRed))
 		}
 	}()
 

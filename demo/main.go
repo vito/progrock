@@ -56,7 +56,7 @@ func main() {
 	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape)
 	defer stop()
 
-	if false {
+	if true {
 		demoZoom(prog, rec)
 
 		go func() {

@@ -28,6 +28,7 @@ type Tape struct {
 
 	// zoomed vertices
 	zoomed   map[string]*zoomedState
+	lastZoom *zoomedState
 	zoomHook func(*zoomedState)
 
 	// raw vertex/group state from the event stream
@@ -529,11 +530,16 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
-	zoom := tape.currentZoom()
+	zoomSt := tape.currentZoom()
+
+	if zoomSt != tape.lastZoom {
+		tape.zoomHook(zoomSt)
+		tape.lastZoom = zoomSt
+	}
 
 	var err error
-	if zoom != nil {
-		err = tape.renderZoomed(w, u, zoom)
+	if zoomSt != nil {
+		err = tape.renderZoomed(w, u, zoomSt)
 	} else if tape.focus {
 		err = tape.renderTree(w, u)
 	} else {
