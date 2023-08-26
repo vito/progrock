@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
+	"os/signal"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"text/template"
 	"time"
 
@@ -18,9 +22,11 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/creack/pty"
 	"github.com/muesli/termenv"
 	"github.com/vito/progrock/tmpl"
 	"github.com/vito/progrock/ui"
+	"golang.org/x/term"
 )
 
 type UI struct {
@@ -125,15 +131,77 @@ func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo) error {
 	})
 }
 
-func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, interactive bool) (*tea.Program, func()) {
-	model := ui.newModel(tape, interrupt, w)
+type swappableWriter struct {
+	original io.Writer
+	override io.Writer
+	sync.Mutex
+}
 
-	opts := []tea.ProgramOption{tea.WithOutput(w)}
+func (w *swappableWriter) Swap(to io.Writer) {
+	log.Println("SW SWAP", to)
+	w.Lock()
+	w.override = to
+	w.Unlock()
+}
 
-	if interactive {
-		opts = append(opts, tea.WithMouseCellMotion())
-	} else {
-		opts = append(opts, tea.WithInput(nil))
+func init() {
+}
+
+func (w *swappableWriter) Restore() {
+	log.Println("SW RESTORE")
+	w.Lock()
+	w.override = nil
+	w.Unlock()
+}
+
+func (w *swappableWriter) Write(p []byte) (int, error) {
+	log.Println("SW WRITE", strconv.Quote(string(p))
+	w.Lock()
+	defer w.Unlock()
+	if w.override != nil {
+		return w.override.Write(p)
+	}
+	return w.original.Write(p)
+}
+
+func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape) (*tea.Program, func()) {
+	p, t, err := pty.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		panic(err)
+	}
+
+	onQuit := make(chan os.Signal, 1)
+	signal.Notify(onQuit, syscall.SIGQUIT)
+
+	go func() {
+		<-onQuit
+		_ = term.Restore(int(os.Stdin.Fd()), oldState) // Best effort.
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		os.Exit(1)
+	}()
+
+	sw := &swappableWriter{original: p}
+	go io.Copy(sw, os.Stdin)
+
+	model := ui.newModel(tape, interrupt, sw)
+
+	tape.setZoomHook(func(st *zoomedState) {
+		if st == nil {
+			sw.Restore()
+		} else {
+			sw.Swap(st.in)
+		}
+	})
+
+	opts := []tea.ProgramOption{
+		tea.WithMouseCellMotion(),
+		tea.WithInput(t),
+		tea.WithOutput(os.Stderr),
 	}
 
 	prog := tea.NewProgram(model, opts...)
@@ -152,13 +220,16 @@ func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape, w io.Writer, 
 	return prog, func() {
 		prog.Send(EndMsg{})
 		displaying.Wait()
+		_ = term.Restore(int(os.Stdin.Fd()), oldState) // Best effort.
 		model.Print(os.Stderr)
 		model.PrintTrailer(os.Stderr)
 	}
 }
 
-func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *Model {
+func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, sw *swappableWriter) *Model {
 	return &Model{
+		sw: sw,
+
 		tape: tape,
 		ui:   ui,
 
@@ -177,6 +248,8 @@ func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, w io.Writer) *M
 }
 
 type Model struct {
+	sw *swappableWriter
+
 	tape *Tape
 
 	ui *UI

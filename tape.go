@@ -15,6 +15,11 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+type zoomedState struct {
+	term *midterm.Terminal
+	in   io.Writer
+}
+
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
 type Tape struct {
@@ -22,7 +27,8 @@ type Tape struct {
 	order []string
 
 	// zoomed vertices
-	zoomed map[string]*midterm.Terminal
+	zoomed   map[string]*zoomedState
+	zoomHook func(*zoomedState)
 
 	// raw vertex/group state from the event stream
 	vertexes map[string]*Vertex
@@ -110,7 +116,7 @@ func NewTape() *Tape {
 		vertex2groups:  make(map[string]map[string]struct{}),
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
-		zoomed:         make(map[string]*midterm.Terminal),
+		zoomed:         make(map[string]*zoomedState),
 
 		// default to unbounded screen size so we don't arbitrarily wrap log output
 		// when no size is given
@@ -166,7 +172,7 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	for _, l := range status.Logs {
 		var w io.Writer
 		if t, found := tape.zoomed[l.Vertex]; found {
-			w = t
+			w = t.term
 		} else {
 			w = tape.vertexLogs(l.Vertex)
 		}
@@ -212,8 +218,11 @@ func (tape *Tape) zoom(v *Vertex) {
 	} else {
 		vt = midterm.NewTerminal(tape.height, tape.width)
 	}
-	tape.zoomed[v.Id] = vt
-	setupTerm(v.Id, vt)
+	w := setupTerm(v.Id, vt)
+	tape.zoomed[v.Id] = &zoomedState{
+		term: vt,
+		in:   w,
+	}
 }
 
 func (tape *Tape) unzoom(vtx *Vertex) {
@@ -496,7 +505,7 @@ func (tape *Tape) SetWindowSize(w, h int) {
 		l.SetWidth(w)
 	}
 	for _, t := range tape.zoomed {
-		t.Resize(h, w)
+		t.term.Resize(h, w)
 	}
 	tape.globalLogs.SetWidth(w)
 	tape.l.Unlock()
@@ -520,9 +529,11 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
+	zoom := tape.currentZoom()
+
 	var err error
-	if tape.isZoomed() {
-		err = tape.renderZoomed(w, u)
+	if zoom != nil {
+		err = tape.renderZoomed(w, u, zoom)
 	} else if tape.focus {
 		err = tape.renderTree(w, u)
 	} else {
@@ -538,21 +549,10 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) isZoomed() bool {
-	for vid := range tape.zoomed {
-		v := tape.vertexes[vid]
-		if v.Started != nil && v.Completed == nil {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (tape *Tape) renderZoomed(w io.Writer, u *UI) error {
+func (tape *Tape) currentZoom() *zoomedState {
 	var firstZoomed *Vertex
-	var firstZoomedTerm *midterm.Terminal
-	for vId, t := range tape.zoomed {
+	var firstZoomedState *zoomedState
+	for vId, st := range tape.zoomed {
 		v, found := tape.vertexes[vId]
 		if !found {
 			// should be impossible
@@ -566,11 +566,15 @@ func (tape *Tape) renderZoomed(w io.Writer, u *UI) error {
 
 		if firstZoomed == nil || v.Started.AsTime().Before(firstZoomed.Started.AsTime()) {
 			firstZoomed = v
-			firstZoomedTerm = t
+			firstZoomedState = st
 		}
 	}
 
-	return firstZoomedTerm.Render(w)
+	return firstZoomedState
+}
+
+func (tape *Tape) renderZoomed(w io.Writer, u *UI, st *zoomedState) error {
+	return st.term.Render(w)
 }
 
 func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
@@ -684,18 +688,6 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 	groups.Reap(groupsW, u, nil)
 
 	return nil
-}
-
-func (b *bouncer) Ancestry(grp *Group) []*Group {
-	if grp == nil {
-		return nil
-	}
-
-	if grp.Parent == nil {
-		return []*Group{grp}
-	}
-
-	return append(b.Ancestry(b.groups[*grp.Parent]), grp)
 }
 
 func (tape *Tape) renderTree(w io.Writer, u *UI) error {
@@ -870,6 +862,12 @@ func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
 		}
 	}
 	return nil
+}
+
+func (tape *Tape) setZoomHook(fn func(*zoomedState)) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.zoomHook = fn
 }
 
 func (tape *Tape) insert(id string, vtx *Vertex) {

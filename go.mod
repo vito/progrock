@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/charmbracelet/lipgloss v0.7.1
+	github.com/creack/pty v1.1.18
 	github.com/docker/go-units v0.5.0
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776
 	github.com/jonboulle/clockwork v0.4.0
@@ -19,6 +20,7 @@ require (
 	github.com/zmb3/spotify/v2 v2.3.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.7.0
+	golang.org/x/term v0.10.0
 	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
 )
@@ -48,7 +50,6 @@ require (
 	golang.org/x/net v0.12.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
-	golang.org/x/term v0.10.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	golang.org/x/tools v0.11.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect

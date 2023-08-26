@@ -16,7 +16,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock"
-	"golang.org/x/term"
 )
 
 func cmdVtx(ctx context.Context, rec *progrock.Recorder, exe string, args ...string) {
@@ -54,19 +53,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	runningInteractiveApp := true
-	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, !runningInteractiveApp)
+	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape)
 	defer stop()
 
-	if runningInteractiveApp {
-		// Set stdin in raw mode.
-		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-		if err != nil {
-			panic(err)
-		}
-		defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
-
-		demoZoom(prog, rec, runningInteractiveApp)
+	if false {
+		demoZoom(prog, rec)
 
 		go func() {
 			for i := 0; i < 10; i++ {
@@ -186,11 +177,11 @@ dance:
 	rec.Close()
 }
 
-func demoZoom(prog *tea.Program, rec *progrock.Recorder, runningInteractiveApp bool) {
+func demoZoom(prog *tea.Program, rec *progrock.Recorder) {
 	cmd := exec.Command("htop")
 
 	var vtx *progrock.VertexRecorder
-	vtx = rec.Vertex("zoomed", "zoom zoom", progrock.Zoomed(func(term *midterm.Terminal) {
+	vtx = rec.Vertex("zoomed", "zoom zoom", progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
 		p, err := pty.StartWithSize(cmd, &pty.Winsize{
 			Rows: uint16(term.Height),
 			Cols: uint16(term.Width),
@@ -206,10 +197,6 @@ func demoZoom(prog *tea.Program, rec *progrock.Recorder, runningInteractiveApp b
 		term.ForwardRequests = os.Stdin
 		term.ForwardResponses = p
 
-		if runningInteractiveApp {
-			go io.Copy(p, os.Stdin)
-		}
-
 		go io.Copy(term, p)
 
 		term.OnResize(func(rows, cols int) {
@@ -218,5 +205,7 @@ func demoZoom(prog *tea.Program, rec *progrock.Recorder, runningInteractiveApp b
 				Cols: uint16(cols),
 			})
 		})
+
+		return p
 	}))
 }

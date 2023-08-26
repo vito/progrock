@@ -41,7 +41,7 @@ func Internal() VertexOpt {
 
 // ResizeFunc is a function that gets called when the vertex's zoomed pane
 // resizes.
-type TermSetupFunc func(*midterm.Terminal)
+type TermSetupFunc func(*midterm.Terminal) io.Writer
 
 var (
 	// what's a little global state between friends?
@@ -49,13 +49,14 @@ var (
 	termSetupsL = new(sync.Mutex)
 )
 
-func setupTerm(vId string, vt *midterm.Terminal) {
+func setupTerm(vId string, vt *midterm.Terminal) io.Writer {
 	termSetupsL.Lock()
 	defer termSetupsL.Unlock()
 	setup, ok := termSetups[vId]
 	if ok && setup != nil {
-		setup(vt)
+		return setup(vt)
 	}
+	return nil
 }
 
 // Zoomed marks the vertex as zoomed, indicating it should take up as much
