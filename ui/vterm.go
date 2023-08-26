@@ -27,16 +27,8 @@ type Vterm struct {
 }
 
 func NewVterm() *Vterm {
-	vt := midterm.NewTerminal(
-		1,  // start with 1 row
-		80, // pre-allocate 80 columns
-	)
-	// grow vterm width until we're told the window size
-	vt.AutoResizeX = true
-	// grow vterm height forever so we never lose content
-	vt.AutoResizeY = true
 	return &Vterm{
-		vt:      vt,
+		vt:      midterm.NewAutoResizingTerminal(),
 		viewBuf: new(bytes.Buffer),
 	}
 }

@@ -132,19 +132,14 @@ type swappableWriter struct {
 	sync.Mutex
 }
 
-func (w *swappableWriter) Swap(to io.Writer) {
+func (w *swappableWriter) SetOverride(to io.Writer) {
 	w.Lock()
 	w.override = to
 	w.Unlock()
 }
 
-func init() {
-}
-
 func (w *swappableWriter) Restore() {
-	w.Lock()
-	w.override = nil
-	w.Unlock()
+	w.SetOverride(nil)
 }
 
 func (w *swappableWriter) Write(p []byte) (int, error) {
@@ -156,64 +151,64 @@ func (w *swappableWriter) Write(p []byte) (int, error) {
 	return w.original.Write(p)
 }
 
-func (ui *UI) RenderLoop(interrupt context.CancelFunc, tape *Tape) (*tea.Program, func()) {
+type RunFunc = func(context.Context, UIClient) error
+
+// UIClient is an interface for miscellaneous UI-only knobs.
+type UIClient interface {
+	SetStatusInfo(StatusInfo)
+}
+
+func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	// NOTE: establish color cache before we start consuming stdin
 	out := termenv.NewOutput(os.Stderr, termenv.WithColorCache(true))
 
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		panic(err)
+		return err
 	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	inR, inW := io.Pipe()
+
 	sw := &swappableWriter{original: inW}
-	go io.Copy(sw, os.Stdin)
-
-	model := ui.newModel(tape, interrupt, sw)
-
-	tape.setZoomHook(func(st *zoomedState) {
+	tape.setZoomHook(func(st *ZoomedState) { // TODO weird tight coupling.
 		if st == nil {
 			sw.Restore()
 		} else {
-			sw.Swap(st.in)
+			sw.SetOverride(st.Input) // may be nil, same as Restore
 		}
 	})
+	go io.Copy(sw, os.Stdin)
 
-	opts := []tea.ProgramOption{
-		tea.WithMouseCellMotion(),
+	model := ui.newModel(ctx, tape, fn)
+
+	prog := tea.NewProgram(model,
+		tea.WithContext(ctx),
 		tea.WithInput(inR),
 		tea.WithOutput(out),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := prog.Run(); err != nil {
+		return err
 	}
 
-	prog := tea.NewProgram(model, opts...)
+	_ = term.Restore(int(os.Stdin.Fd()), oldState)
 
-	displaying := new(sync.WaitGroup)
-	displaying.Add(1)
-	go func() {
-		defer interrupt() // TODO this feels a little backwards
-		defer displaying.Done()
-		_, err := prog.Run()
-		if err != nil {
-			fmt.Fprintf(out, "%s\n", termenv.String(fmt.Sprintf("display error: %s", err)).Foreground(termenv.ANSIRed))
-		}
-	}()
+	model.Print(os.Stderr)
+	model.PrintTrailer(os.Stderr)
 
-	return prog, func() {
-		prog.Send(EndMsg{})
-		displaying.Wait()
-		_ = term.Restore(int(os.Stdin.Fd()), oldState) // Best effort.
-		model.Print(os.Stderr)
-		model.PrintTrailer(os.Stderr)
-	}
+	return model.err
 }
 
-func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, sw *swappableWriter) *Model {
+func (ui *UI) newModel(ctx context.Context, tape *Tape, run RunFunc) *Model {
+	runCtx, interrupt := context.WithCancel(ctx)
 	return &Model{
-		sw: sw,
-
 		tape: tape,
 		ui:   ui,
 
+		run:       run,
+		runCtx:    runCtx,
 		interrupt: interrupt,
 
 		fps: 10,
@@ -221,7 +216,7 @@ func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, sw *swappableWr
 		// sane defaults before we have the real window size
 		maxWidth:  80,
 		maxHeight: 24,
-		viewport:  viewport.New(80, 24),
+		content:   viewport.New(80, 24),
 
 		contentBuf: new(bytes.Buffer),
 		chromeBuf:  new(bytes.Buffer),
@@ -229,41 +224,37 @@ func (ui *UI) newModel(tape *Tape, interrupt context.CancelFunc, sw *swappableWr
 }
 
 type Model struct {
-	sw *swappableWriter
+	run       RunFunc
+	runCtx    context.Context
+	interrupt func()
+	done      bool
+	err       error
 
 	tape *Tape
 
 	ui *UI
 
-	interrupt func()
+	content       viewport.Model
+	contentHeight int
 
 	chrome       string
 	chromeHeight int
 
-	viewport      viewport.Model
-	maxWidth      int
-	maxHeight     int
-	contentHeight int
+	// screen dimensions
+	maxWidth  int
+	maxHeight int
 
 	// buffers for async rendering so we're not constantly reallocating
 	chromeBuf  *bytes.Buffer
 	contentBuf *bytes.Buffer
 
-	statusInfos []StatusInfo
+	// custom info to display, set by the UIClient
+	infos  []StatusInfo
+	infosL sync.Mutex
 
 	// UI refresh rate
 	fps float64
-
-	finished bool
 }
-
-type StatusInfo struct {
-	Name  string
-	Value string
-	Order int
-}
-
-type StatusInfoMsg StatusInfo
 
 func (m *Model) Print(w io.Writer) {
 	if err := m.tape.Render(w, m.ui); err != nil {
@@ -273,50 +264,29 @@ func (m *Model) Print(w io.Writer) {
 }
 
 func (m *Model) PrintTrailer(w io.Writer) {
-	if err := m.ui.RenderStatus(w, m.tape, m.statusInfos); err != nil {
+	if err := m.ui.RenderStatus(w, m.tape, m.infos); err != nil {
 		fmt.Fprintln(w, "failed to render trailer:", err)
 		return
 	}
 	fmt.Fprintln(w)
 }
 
-type EndMsg struct{}
+var _ tea.Model = (*Model)(nil)
 
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		ui.Frame(m.fps),
 		m.ui.Spinner.Init(),
+		m.spawn,
 	)
 }
 
-func (m *Model) viewportWidth() int {
-	width := m.viewport.Width
-	if width == 0 {
-		width = 80
-	}
-
-	return width
+type doneMsg struct {
+	err error
 }
 
-func (m *Model) viewportHeight() int {
-	height := m.viewport.Height
-	if height == 0 {
-		height = 24
-	}
-
-	return height
-}
-
-func (m *Model) vtermHeight() int {
-	return m.maxHeight / 3
-}
-
-func (m *Model) setWindowSize(w, h int) {
-	m.maxWidth = w
-	m.maxHeight = h
-	m.viewport.Width = m.maxWidth
-	m.tape.SetWindowSize(w, h-m.chromeHeight)
-	m.ui.SetWindowSize(w, h)
+func (m *Model) spawn() tea.Msg {
+	return doneMsg{m.run(m.runCtx, m)}
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -326,32 +296,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, ui.Keys.Quit):
-			// don't tea.Quit, let the UI finish
 			m.interrupt()
+			return m, nil
 		}
 
 		s, cmd := m.ui.Spinner.Update(msg)
 		m.ui.Spinner = s.(ui.Spinner)
 		cmds = append(cmds, cmd)
 
+	case doneMsg:
+		m.done = true
+		m.err = msg.err
+		return m, tea.Quit
+
 	case tea.WindowSizeMsg:
 		m.setWindowSize(msg.Width, msg.Height)
-
-	case StatusInfoMsg:
-		infos := append([]StatusInfo{}, m.statusInfos...)
-		infos = append(infos, StatusInfo(msg))
-		sort.Slice(infos, func(i, j int) bool {
-			if infos[i].Order == infos[j].Order {
-				return infos[i].Name < infos[j].Name
-			}
-			return infos[i].Order < infos[j].Order
-		})
-		m.statusInfos = infos
-
-	case EndMsg:
-		m.finished = true
-		// m.render()
-		cmds = append(cmds, tea.Quit)
 
 	case ui.FrameMsg:
 		// NB: take care not to forward Frame downstream, since that will result
@@ -368,11 +327,55 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ui.Spinner = s.(ui.Spinner)
 		cmds = append(cmds, cmd)
 
-		m.viewport, cmd = m.viewport.Update(msg)
+		m.content, cmd = m.content.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) View() string {
+	if m.done {
+		// print nothing on exit; the outer render loop will call Print one last
+		// time, otherwise bubbletea crops out the lines that go offscreen
+		return ""
+	}
+
+	output := m.content.View()
+	if output == "\n" {
+		output = ""
+	}
+	if output == "" {
+		return m.chrome
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		output,
+		m.chrome,
+	)
+}
+
+var _ UIClient = (*Model)(nil)
+
+type StatusInfo struct {
+	Name  string
+	Value string
+	Order int
+}
+
+func (m *Model) SetStatusInfo(info StatusInfo) {
+	m.infosL.Lock()
+	defer m.infosL.Unlock()
+	infos := append([]StatusInfo{}, m.infos...)
+	infos = append(infos, info)
+	sort.Slice(infos, func(i, j int) bool {
+		if infos[i].Order == infos[j].Order {
+			return infos[i].Name < infos[j].Name
+		}
+		return infos[i].Order < infos[j].Order
+	})
+	m.infos = infos
 }
 
 func (m *Model) render() {
@@ -391,24 +394,24 @@ func (m *Model) render() {
 	content := strings.TrimRight(m.contentBuf.String(), "\n")
 	m.contentHeight = lipgloss.Height(content)
 
-	atBottom := m.viewport.AtBottom()
+	atBottom := m.content.AtBottom()
 
-	m.viewport.SetContent(content)
+	m.content.SetContent(content)
 
 	max := m.maxHeight - m.chromeHeight
-	m.viewport.Height = m.contentHeight
-	if m.viewport.Height+m.chromeHeight > m.maxHeight {
-		m.viewport.Height = max
+	m.content.Height = m.contentHeight
+	if m.content.Height+m.chromeHeight > m.maxHeight {
+		m.content.Height = max
 	}
 
 	if atBottom {
-		m.viewport.GotoBottom()
+		m.content.GotoBottom()
 	}
 }
 
 func (m *Model) viewChrome() string {
 	m.chromeBuf.Reset()
-	m.ui.RenderStatus(m.chromeBuf, m.tape, m.statusInfos)
+	m.ui.RenderStatus(m.chromeBuf, m.tape, m.infos)
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Bottom,
@@ -418,24 +421,32 @@ func (m *Model) viewChrome() string {
 	)
 }
 
-func (m *Model) View() string {
-	if m.finished {
-		// print nothing on exit; the outer render loop will call Print one last
-		// time, otherwise bubbletea crops out the lines that go offscreen
-		return ""
+func (m *Model) viewportWidth() int {
+	width := m.content.Width
+	if width == 0 {
+		width = 80
 	}
 
-	output := m.viewport.View()
-	if output == "\n" {
-		output = ""
-	}
-	if output == "" {
-		return m.chrome
+	return width
+}
+
+func (m *Model) viewportHeight() int {
+	height := m.content.Height
+	if height == 0 {
+		height = 24
 	}
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		output,
-		m.chrome,
-	)
+	return height
+}
+
+func (m *Model) vtermHeight() int {
+	return m.maxHeight / 3
+}
+
+func (m *Model) setWindowSize(w, h int) {
+	m.maxWidth = w
+	m.maxHeight = h
+	m.content.Width = m.maxWidth
+	m.tape.SetWindowSize(w, h-m.chromeHeight)
+	m.ui.SetWindowSize(w, h)
 }

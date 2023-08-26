@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/creack/pty"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
@@ -48,21 +47,26 @@ func main() {
 	tape.Focus(focus)
 	tape.ShowInternal(showInternal)
 
+	ctx := context.Background()
 	rec := progrock.NewRecorder(tape)
+	ctx = progrock.RecorderToContext(ctx, rec)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	err := progrock.DefaultUI().Run(ctx, tape, demo)
+	if err != nil {
+		panic(err)
+	}
+}
 
-	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape)
-	defer stop()
+func demo(ctx context.Context, ui progrock.UIClient) error {
+	rec := progrock.RecorderFromContext(ctx)
 
 	if true {
-		demoZoom(prog, rec)
+		demoZoom(rec)
 
 		go func() {
-			for i := 0; i < 10; i++ {
+			for i := 1; i <= 5; i++ {
 				time.Sleep(1 * time.Second)
-				prog.Send(progrock.StatusInfoMsg{
+				ui.SetStatusInfo(progrock.StatusInfo{
 					Name:  fmt.Sprintf("More info %d", i),
 					Value: "https://example.com",
 				})
@@ -70,13 +74,13 @@ func main() {
 		}()
 	}
 
-	prog.Send(progrock.StatusInfoMsg{
+	ui.SetStatusInfo(progrock.StatusInfo{
 		Name:  "Foo",
 		Value: "abcdef",
 		Order: 2,
 	})
 
-	prog.Send(progrock.StatusInfoMsg{
+	ui.SetStatusInfo(progrock.StatusInfo{
 		Name:  "Info",
 		Value: "https://example.com",
 		Order: 1,
@@ -174,10 +178,10 @@ dance:
 
 	wg.Wait()
 
-	rec.Close()
+	return rec.Close()
 }
 
-func demoZoom(prog *tea.Program, rec *progrock.Recorder) {
+func demoZoom(rec *progrock.Recorder) {
 	cmd := exec.Command("htop")
 
 	var vtx *progrock.VertexRecorder
