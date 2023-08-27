@@ -168,12 +168,20 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
+	// DAG UI supports scrolling, since the only other option is to have it cut
+	// offscreen
+	out.EnableMouseAllMotion()
+
 	inR, inW := io.Pipe()
 
 	sw := &swappableWriter{original: inW}
 	tape.setZoomHook(func(st *ZoomedState) { // TODO weird tight coupling.
 		if st == nil {
 			sw.Restore()
+
+			// restore scrolling as we transition back to the DAG UI, since an app
+			// may have disabled it
+			out.EnableMouseAllMotion()
 		} else {
 			sw.SetOverride(st.Input) // may be nil, same as Restore
 		}
@@ -182,12 +190,7 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 
 	model := ui.newModel(ctx, tape, fn)
 
-	prog := tea.NewProgram(model,
-		tea.WithContext(ctx),
-		tea.WithInput(inR),
-		tea.WithOutput(out),
-		tea.WithMouseCellMotion(),
-	)
+	prog := tea.NewProgram(model, tea.WithInput(inR), tea.WithOutput(out))
 
 	if _, err := prog.Run(); err != nil {
 		return err
