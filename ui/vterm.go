@@ -67,9 +67,8 @@ func (term *Vterm) SetHeight(height int) {
 
 func (term *Vterm) SetWidth(width int) {
 	term.Width = width
-	term.vt.AutoResizeX = false // stop auto-resizing vterm width
 	prefixWidth := lipgloss.Width(term.Prefix)
-	if term.Width > prefixWidth {
+	if width > prefixWidth {
 		term.vt.ResizeX(width - prefixWidth)
 	}
 }
