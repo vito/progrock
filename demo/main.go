@@ -61,7 +61,8 @@ func demo(ctx context.Context, ui progrock.UIClient) error {
 	rec := progrock.RecorderFromContext(ctx)
 
 	if true {
-		demoZoom(rec)
+		cmdPane(rec, "htop")
+		cmdPane(rec, "vim")
 
 		go func() {
 			for i := 1; i <= 5; i++ {
@@ -181,11 +182,13 @@ dance:
 	return rec.Close()
 }
 
-func demoZoom(rec *progrock.Recorder) {
-	cmd := exec.Command("htop")
+func cmdPane(rec *progrock.Recorder, exe string, args ...string) {
+	cmd := exec.Command(exe, args...)
+
+	name := strings.Join(append([]string{exe}, args...), " ")
 
 	var vtx *progrock.VertexRecorder
-	vtx = rec.Vertex("zoomed", "zoom zoom", progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
+	vtx = rec.Vertex(digest.FromString(name), name, progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
 		p, err := pty.StartWithSize(cmd, &pty.Winsize{
 			Rows: uint16(term.Height),
 			Cols: uint16(term.Width),
