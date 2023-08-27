@@ -195,6 +195,8 @@ github.com/vito/dagger/sdk/go v0.0.0-20230817151820-757554a40772 h1:r0TpgjsHTuOo
 github.com/vito/dagger/sdk/go v0.0.0-20230817151820-757554a40772/go.mod h1:3OYDaif9MH2ajxX+oLp8oeRLDEfz2pIjpqis/j4GkuY=
 github.com/vito/midterm v0.1.2 h1:2SojW2HruoyCubvF4q679Pu6oNxH/ztRn5MWCZyeuSk=
 github.com/vito/midterm v0.1.2/go.mod h1:Mm3u6lrpzo2EFSJbwksKOdottTJzYePK8c1KJy4aRbk=
+github.com/vito/midterm v0.1.3-0.20230827000125-38b9e5d915bd h1:i9JDBKR9dTf+zn4MdZttGl2/HcEuX2DaEck7YSV/1yE=
+github.com/vito/midterm v0.1.3-0.20230827000125-38b9e5d915bd/go.mod h1:Mm3u6lrpzo2EFSJbwksKOdottTJzYePK8c1KJy4aRbk=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

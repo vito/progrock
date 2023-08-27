@@ -70,7 +70,7 @@ func (term *Vterm) SetWidth(width int) {
 	term.vt.AutoResizeX = false // stop auto-resizing vterm width
 	prefixWidth := lipgloss.Width(term.Prefix)
 	if term.Width > prefixWidth {
-		term.vt.Resize(term.vt.Height, width-prefixWidth)
+		term.vt.ResizeX(width - prefixWidth)
 	}
 }
 

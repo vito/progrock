@@ -639,7 +639,7 @@ func TestAutoResize(t *testing.T) {
 	t.Run("initially unbounded", func(t *testing.T) {
 		vtx := recorder.Vertex("long", "long lines")
 		for i := 0; i < 200; i++ {
-			fmt.Fprint(vtx.Stdout(), "x")
+			fmt.Fprintf(vtx.Stdout(), "%s", string('a'+(rune(i)%3)))
 		}
 
 		testGoldenAutoResize(t, tape)
@@ -650,7 +650,7 @@ func TestAutoResize(t *testing.T) {
 
 		vtx := recorder.Vertex("long2", "more long lines")
 		for i := 0; i < 200; i++ {
-			fmt.Fprint(vtx.Stdout(), "y")
+			fmt.Fprintf(vtx.Stdout(), "%s", string('a'+(rune(i)%3)))
 		}
 
 		testGoldenAutoResize(t, tape)
