@@ -160,7 +160,7 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 
 	// DAG UI supports scrolling, since the only other option is to have it cut
 	// offscreen
-	out.EnableMouseAllMotion()
+	out.EnableMouseCellMotion()
 
 	inR, inW := io.Pipe()
 
@@ -171,8 +171,12 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 
 			// restore scrolling as we transition back to the DAG UI, since an app
 			// may have disabled it
-			out.EnableMouseAllMotion()
+			out.EnableMouseCellMotion()
 		} else {
+			// disable mouse events, can't assume zoomed input wants it (might be
+			// regular shell like sh)
+			out.DisableMouseCellMotion()
+
 			sw.SetOverride(st.Input) // may be nil, same as Restore
 		}
 	})
