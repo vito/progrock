@@ -37,17 +37,7 @@ func NewUI(spinner ui.Spinner) *UI {
 	ui.tmpl = template.New("ui").
 		Funcs(termenv.TemplateFuncs(termenv.ANSI)).
 		Funcs(template.FuncMap{
-			"duration": func(dt time.Duration) string {
-				prec := 1
-				sec := dt.Seconds()
-				if sec < 10 {
-					prec = 2
-				} else if sec < 100 {
-					prec = 1
-				}
-
-				return fmt.Sprintf("%.[2]*[1]fs", dt.Seconds(), prec)
-			},
+			"duration": fmtDuration,
 			"bar": func(current, total int64) string {
 				bar := progress.New(progress.WithSolidFill("2"))
 				bar.Width = ui.width / 8
@@ -452,4 +442,22 @@ func (m *Model) setWindowSize(w, h int) {
 	m.content.Width = m.maxWidth
 	m.tape.SetWindowSize(w, h-m.chromeHeight)
 	m.ui.SetWindowSize(w, h)
+}
+
+func fmtDuration(d time.Duration) string {
+	days := int64(d.Hours()) / 24
+	hours := int64(d.Hours()) % 24
+	minutes := int64(d.Minutes()) % 60
+	seconds := d.Seconds() - float64(86400*days) - float64(3600*hours) - float64(60*minutes)
+
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%.2fs", seconds)
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%.1fs", minutes, seconds)
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh%dm%.1fs", hours, minutes, seconds)
+	default:
+		return fmt.Sprintf("%dd%dh%dm%.1fs", days, hours, minutes, seconds)
+	}
 }
