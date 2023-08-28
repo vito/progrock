@@ -1,44 +1,34 @@
 package main
 
-import (
-	"dagger.io/dagger"
-)
-
-var dag = dagger.DefaultClient()
-
 func main() {
 	dag.Environment().
-		WithCheck_(Test).
-		WithArtifact_(Generate).
-		WithArtifact_(Demo).
-		WithShell_(Base).
+		WithCheck(Test).
+		WithArtifact(Generate).
+		WithArtifact(Demo).
+		WithShell(Base).
 		Serve()
 }
 
 // Test runs tests.
-func Test(ctx dagger.Context) *dagger.EnvironmentCheck {
-	return dag.Go().Test(Base(ctx), Code(ctx))
+func Test() *EnvironmentCheck {
+	return dag.Go().Test(Base(), Code())
 }
 
 // Demo builds the demo app.
-func Demo(ctx dagger.Context) *dagger.Directory {
-	return dag.Go().Build(
-		Base(ctx),
-		Code(ctx),
-		dagger.GoBuildOpts{
-			Packages: []string{"./demo"},
-			Static:   true,
-			Subdir:   "demo",
-		},
-	)
+func Demo() *Directory {
+	return dag.Go().Build(Base(), Code(), GoBuildOpts{
+		Packages: []string{"./demo"},
+		Static:   true,
+		Subdir:   "demo",
+	})
 }
 
 // Generate generates code from .proto files.
-func Generate(ctx dagger.Context) *dagger.Directory {
-	return dag.Go().Generate(Base(ctx), Code(ctx))
+func Generate() *Directory {
+	return dag.Go().Generate(Base(), Code())
 }
 
-func Base(ctx dagger.Context) *dagger.Container {
+func Base() *Container {
 	return dag.Apko().Wolfi([]string{
 		"go",
 		"bash",
@@ -53,8 +43,8 @@ func Base(ctx dagger.Context) *dagger.Container {
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@latest"})
 }
 
-func Code(ctx dagger.Context) *dagger.Directory {
-	return dag.Host().Directory(".", dagger.HostDirectoryOpts{
+func Code() *Directory {
+	return dag.Host().Directory(".", HostDirectoryOpts{
 		Include: []string{
 			"**/*.go",
 			"**/go.mod",

@@ -1,0 +1,94 @@
+fn main(): ; foo
+  environment.self.
+    with-command(build-demo).
+    serve
+
+fn build-demo -> Directory:
+  go-build(base(), code(), {
+    packages: [./demo] # typed, somehow
+    static: true
+    subdir: ./demo/
+  })
+
+# simple assignment, no := or anything fancy
+packages = wolfi(%w{
+  go
+  protobuf-dev
+  protoc
+  protoc-gen-go
+  protoc-gen-go-grpc
+})
+
+fn base() -> Container:
+  packages $:
+    go install "gotest.tools/gotestsum@latest"
+
+fn gobin(ctr Container) -> Container:
+  ctr.
+    withEnvVariable("GOBIN", "/go/bin").
+    withEnvVariable("PATH", "$GOBIN:$PATH", {expand: true})
+
+fn code() -> Directory:
+  host.directory(".", {
+    include: %w{
+      **/*.go
+      **/go.{mod,sum}
+      **/testdata/**/*
+      **/*.proto
+      **/*.tmpl
+    }
+    exclude: %w{
+      ci/**/*
+    }
+  })
+
+-- foo | can't because --foo is a flag
+; foo  | means it can't be used for expr separator, but could use a comma
+# foo  | consistency with bash
+
+; --------------
+;
+; Name: dash
+; Identifiers have dashes
+;   - aligns with CLIs, bash, etc
+; Dagger types are first-class (Container, not dagger.Container)
+; Dagger client is global (container, not client.container)
+; Dagger never mentioned by name (besides homage in "Dash" itself)
+;   - Focus on pure concepts, not branding
+; Types, for sanity
+;   - Hindley-Milner if I can figure out how to implement it
+; Conventional syntax, with a dash of sugar
+;   - blocks
+;     - whitespace sensitivity or nah? i think yah
+;     - maybe _only_ have whitespace sensitivty, and reserve {} for key-val?
+;   - special quotes: %w{...}
+; Operatives, for metaprogramming
+;   - Operatives are space-separated?
+; ... maybe no operatives? it's a bit circlejerky tbh
+;   - this isn't a general-purpose language
+
+# TODO:
+# - comment syntax
+# - expr separator syntax
+# - key/val args syntax
+#   - is everything key/val?
+#
+# design cues:
+#   - keep it simple, don't pay 1000 homages to 1000 languages
+#     - don't be afraid to be different
+#     - don't be afraid to be the same
+#   - take the good parts of Bash
+#     - it's the "language" tackling the most similar domain
+#       - almost every language sucks for quickly scripting commands
+#     - examples:
+#       - # for comments
+#   - favor ergonomics over purity
+#     - use keywords (e.g. def) to make it easier to walk through the file using tags/etc.
+#     - make things look different if they are interacted with differently
+#     - Bass went too far in the "everything is an X" direction
+#   - don't circlejerk language shit
+#     - Kernel is great but this probably doesn't need operatives
+#   - types, with inference (hindley milner?)
+#     - no optional typing. don't want fragmentation. it shouldn't be that
+#       complicated anyway.
+#
