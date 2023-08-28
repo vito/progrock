@@ -28,12 +28,17 @@ func WithGroup(ctx context.Context, name string, opts ...GroupOpt) (context.Cont
 	return ToContext(ctx, rec), rec
 }
 
-// RecorderToContext is deprecated; use ToContext instead.
+// RecorderToContext returns a new context with the given Recorder attached.
+//
+// Deprecated: use ToContext instead.
 func RecorderToContext(ctx context.Context, recorder *Recorder) context.Context {
 	return ToContext(ctx, recorder)
 }
 
-// RecorderFromContext is deprecated; use FromContext instead.
+// RecorderFromContext returns the Recorder attached to the given context, or a
+// no-op Recorder if none is attached.
+//
+// Deprecated: use FromContext instead.
 func RecorderFromContext(ctx context.Context) *Recorder {
 	return FromContext(ctx)
 }
