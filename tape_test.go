@@ -28,28 +28,10 @@ func TestSingle(t *testing.T) {
 	testGolden(t, tape)
 }
 
-func TestSingleNoGroup(t *testing.T) {
-	tape := progrock.NewTape()
-
-	recorder := progrock.NewPassthroughRecorder(tape)
-	recorder.Vertex("a", "vertex a").Done(nil)
-
-	testGolden(t, tape)
-}
-
 func TestSingleRunning(t *testing.T) {
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
-	runningVtx(recorder, "a", "vertex a")
-
-	testGolden(t, tape)
-}
-
-func TestSingleRunningNoGroup(t *testing.T) {
-	tape := progrock.NewTape()
-
-	recorder := progrock.NewPassthroughRecorder(tape)
 	runningVtx(recorder, "a", "vertex a")
 
 	testGolden(t, tape)
@@ -87,15 +69,6 @@ func TestSingleErrored(t *testing.T) {
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
-	runningVtx(recorder, "a", "vertex a").Done(fmt.Errorf("nope"))
-
-	testGolden(t, tape)
-}
-
-func TestSingleErroredNoGroup(t *testing.T) {
-	tape := progrock.NewTape()
-
-	recorder := progrock.NewPassthroughRecorder(tape)
 	runningVtx(recorder, "a", "vertex a").Done(fmt.Errorf("nope"))
 
 	testGolden(t, tape)
