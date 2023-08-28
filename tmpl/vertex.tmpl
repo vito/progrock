@@ -13,5 +13,5 @@
 {{- else if .Cached -}}
 {{- Foreground "4" "CACHED" -}}{{- " " -}}
 {{- end -}}
-{{- .Name | words -}}
+{{- .Name | words | join " " -}}
 {{- "" }}
