@@ -24,6 +24,12 @@ type Recorder struct {
 	groupsL sync.Mutex
 }
 
+// RootID is "_root", the static ID value set for all Root groups.
+//
+// Note: all Root groups MUST have the same ID, so that there are never
+// "multiple roots" - a truly unsettling concept.
+const RootID = "_root"
+
 // RootGroup is the name of the outermost group.
 //
 // Its value is blank, since it should never really be shown in the UI, since
@@ -32,12 +38,6 @@ type Recorder struct {
 // sense to the user - for example, by only displaying its contents, as if each
 // of its children were at the top level.
 const RootGroup = ""
-
-// RootID is the static ID value set for all Root groups.
-//
-// Note: all Root groups MUST have the same ID, so that there are never
-// "multiple roots" - a truly unsettling concept.
-const RootID = "<root>"
 
 // NewRecorder creates a new Recorder which writes to the given Writer.
 //
