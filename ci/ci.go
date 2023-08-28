@@ -11,6 +11,7 @@ func main() {
 		WithCheck_(Test).
 		WithArtifact_(Generate).
 		WithArtifact_(Demo).
+		WithShell_(Base).
 		Serve()
 }
 
@@ -40,6 +41,7 @@ func Generate(ctx dagger.Context) *dagger.Directory {
 func Base(ctx dagger.Context) *dagger.Container {
 	return dag.Apko().Wolfi([]string{
 		"go",
+		"bash",
 		"protobuf-dev", // for google/protobuf/*.proto
 		"protoc",
 		"protoc-gen-go",

@@ -9,8 +9,8 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/muesli/termenv"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock"
-	"github.com/vito/vt100"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -44,7 +44,7 @@ type vertex struct {
 	updates       int
 	taskUpdates   map[string]struct{}
 
-	term      *vt100.VT100
+	term      *midterm.Terminal
 	termBytes int
 }
 

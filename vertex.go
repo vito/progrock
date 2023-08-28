@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/midterm"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -37,8 +39,39 @@ func Internal() VertexOpt {
 	}
 }
 
-// Focused marks the vertex as focused, indicating it should be featured more
-// prominently in the UI.
+// TermSetupFunc is a function that gets called when the vertex's zoomed pane
+// resizes. It returns an optional io.Writer for accepting user input.
+type TermSetupFunc func(*midterm.Terminal) io.Writer
+
+var (
+	// what's a little global state between friends?
+	termSetups  = map[string]TermSetupFunc{}
+	termSetupsL = new(sync.Mutex)
+)
+
+func setupTerm(vId string, vt *midterm.Terminal) io.Writer {
+	termSetupsL.Lock()
+	defer termSetupsL.Unlock()
+	setup, ok := termSetups[vId]
+	if ok && setup != nil {
+		return setup(vt)
+	}
+	return nil
+}
+
+// Zoomed marks the vertex as zoomed, indicating it should take up as much
+// screen space as possible.
+func Zoomed(setup TermSetupFunc) VertexOpt {
+	return func(vertex *Vertex) {
+		termSetupsL.Lock()
+		termSetups[vertex.Id] = setup
+		termSetupsL.Unlock()
+		vertex.Zoomed = true
+	}
+}
+
+// Focused marks the vertex as focused, indicating it should be shown in the UI
+// when in focus mode.
 func Focused() VertexOpt {
 	return func(vertex *Vertex) {
 		vertex.Focused = true

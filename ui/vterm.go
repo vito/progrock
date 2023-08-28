@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 
@@ -12,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/vito/vt100"
+	"github.com/vito/midterm"
 )
 
 type Vterm struct {
@@ -22,27 +21,14 @@ type Vterm struct {
 
 	Prefix string
 
-	vt *vt100.VT100
+	vt *midterm.Terminal
 
 	viewBuf *bytes.Buffer
 }
 
-var debugVterm = os.Getenv("_DEBUG_VTERM") != ""
-
 func NewVterm() *Vterm {
-	vt := vt100.NewVT100(
-		1,  // start with 1 row
-		80, // pre-allocate 80 columns
-	)
-	// grow vterm width until we're told the window size
-	vt.AutoResizeX = true
-	// grow vterm height forever so we never lose content
-	vt.AutoResizeY = true
-	if debugVterm {
-		vt.DebugLogs = os.Stderr
-	}
 	return &Vterm{
-		vt:      vt,
+		vt:      midterm.NewAutoResizingTerminal(),
 		viewBuf: new(bytes.Buffer),
 	}
 }
@@ -81,10 +67,9 @@ func (term *Vterm) SetHeight(height int) {
 
 func (term *Vterm) SetWidth(width int) {
 	term.Width = width
-	term.vt.AutoResizeX = false // stop auto-resizing vterm width
 	prefixWidth := lipgloss.Width(term.Prefix)
-	if term.Width > prefixWidth {
-		term.vt.Resize(term.vt.Height, width-prefixWidth)
+	if width > prefixWidth {
+		term.vt.ResizeX(width - prefixWidth)
 	}
 }
 
@@ -92,7 +77,7 @@ func (term *Vterm) SetPrefix(prefix string) {
 	term.Prefix = prefix
 	prefixWidth := lipgloss.Width(prefix)
 	if term.Width > prefixWidth && !term.vt.AutoResizeX {
-		term.vt.Resize(term.vt.Height, term.Width-prefixWidth)
+		term.vt.ResizeX(term.Width - prefixWidth)
 	}
 }
 
@@ -145,7 +130,7 @@ func (term *Vterm) Bytes(offset, height int) []byte {
 	buf.Reset()
 
 	var lines int
-	for row, line := range term.vt.Content {
+	for row := range term.vt.Content {
 		if row < offset {
 			continue
 		}
@@ -154,21 +139,7 @@ func (term *Vterm) Bytes(offset, height int) []byte {
 		}
 
 		buf.WriteString(term.Prefix)
-
-		var lastFormat vt100.Format
-
-		for col, r := range line {
-			f := term.vt.Format[row][col]
-
-			if f != lastFormat {
-				lastFormat = f
-				buf.Write([]byte(renderFormat(f)))
-			}
-
-			buf.Write([]byte(string(r)))
-		}
-
-		buf.Write([]byte(reset + "\n"))
+		term.vt.RenderLine(buf, row)
 		lines++
 
 		if row > used {
@@ -189,7 +160,7 @@ func (term *Vterm) LastLine() string {
 
 	var lastLine string
 	for row := used - 1; row >= 0; row-- {
-		var lastFormat vt100.Format
+		var lastFormat midterm.Format
 
 		buf := new(strings.Builder)
 		for col, r := range term.vt.Content[row] {
@@ -197,7 +168,7 @@ func (term *Vterm) LastLine() string {
 
 			if f != lastFormat {
 				lastFormat = f
-				buf.Write([]byte(renderFormat(f)))
+				buf.Write([]byte(f.Render()))
 			}
 
 			buf.Write([]byte(string(r)))
@@ -231,58 +202,4 @@ func (term *Vterm) Print(w io.Writer) error {
 	}
 
 	return nil
-}
-
-func renderFormat(f vt100.Format) string {
-	styles := []string{}
-	if f.Fg != nil {
-		styles = append(styles, f.Fg.Sequence(false))
-	}
-	if f.Bg != nil {
-		styles = append(styles, f.Bg.Sequence(true))
-	}
-
-	switch f.Intensity {
-	case vt100.Bold:
-		styles = append(styles, termenv.BoldSeq)
-	case vt100.Faint:
-		styles = append(styles, termenv.FaintSeq)
-	}
-
-	if f.Italic {
-		styles = append(styles, termenv.ItalicSeq)
-	}
-
-	if f.Underline {
-		styles = append(styles, termenv.UnderlineSeq)
-	}
-
-	if f.Blink {
-		styles = append(styles, termenv.BlinkSeq)
-	}
-
-	if f.Reverse {
-		styles = append(styles, termenv.ReverseSeq)
-	}
-
-	if f.Conceal {
-		styles = append(styles, "8")
-	}
-
-	if f.CrossOut {
-		styles = append(styles, termenv.CrossOutSeq)
-	}
-
-	if f.Overline {
-		styles = append(styles, termenv.OverlineSeq)
-	}
-
-	var res string
-	if f.Reset || f == (vt100.Format{}) {
-		res = reset
-	}
-	if len(styles) > 0 {
-		res += fmt.Sprintf("%s%sm", termenv.CSI, strings.Join(styles, ";"))
-	}
-	return res
 }

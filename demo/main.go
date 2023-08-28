@@ -4,13 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock"
 )
 
@@ -44,21 +47,41 @@ func main() {
 	tape.Focus(focus)
 	tape.ShowInternal(showInternal)
 
+	ctx := context.Background()
 	rec := progrock.NewRecorder(tape)
+	ctx = progrock.RecorderToContext(ctx, rec)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	err := progrock.DefaultUI().Run(ctx, tape, demo)
+	if err != nil {
+		panic(err)
+	}
+}
 
-	prog, stop := progrock.DefaultUI().RenderLoop(cancel, tape, os.Stderr, true)
-	defer stop()
+func demo(ctx context.Context, ui progrock.UIClient) error {
+	rec := progrock.RecorderFromContext(ctx)
 
-	prog.Send(progrock.StatusInfoMsg{
+	if true {
+		cmdPane(rec, "htop")
+		cmdPane(rec, "vim")
+
+		go func() {
+			for i := 1; i <= 5; i++ {
+				time.Sleep(1 * time.Second)
+				ui.SetStatusInfo(progrock.StatusInfo{
+					Name:  fmt.Sprintf("More info %d", i),
+					Value: "https://example.com",
+				})
+			}
+		}()
+	}
+
+	ui.SetStatusInfo(progrock.StatusInfo{
 		Name:  "Foo",
 		Value: "abcdef",
 		Order: 2,
 	})
 
-	prog.Send(progrock.StatusInfoMsg{
+	ui.SetStatusInfo(progrock.StatusInfo{
 		Name:  "Info",
 		Value: "https://example.com",
 		Order: 1,
@@ -75,7 +98,7 @@ func main() {
 	wg := new(sync.WaitGroup)
 
 dance:
-	for v := 0; v < 10; v++ {
+	for v := 0; v < 20; v++ {
 		v := v
 
 		group := rec.WithGroup(fmt.Sprintf("group %d", v))
@@ -107,7 +130,7 @@ dance:
 			}
 		}()
 
-		subVtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
+		subCtx, cancel := context.WithTimeout(ctx, time.Duration(v)*time.Second)
 
 		multiGroup := group.Vertex(
 			digest.Digest(fmt.Sprintf("log-and-count-%d", v%2)),
@@ -121,7 +144,7 @@ dance:
 
 			time.Sleep(500 * time.Millisecond)
 
-			for i := int64(0); subVtx.Err() == nil; i++ {
+			for i := int64(0); subCtx.Err() == nil; i++ {
 				if i%2 == 0 {
 					fmt.Fprintf(succeeds.Stdout(), "stdout %d\n", i)
 				} else {
@@ -130,7 +153,7 @@ dance:
 
 				select {
 				case <-time.After(500 * time.Millisecond):
-				case <-subVtx.Done():
+				case <-subCtx.Done():
 				}
 			}
 
@@ -144,11 +167,11 @@ dance:
 
 		if v%2 == 0 {
 			subGroup := group.WithGroup(fmt.Sprintf("sub-group %d", v))
-			go cmdVtx(subVtx, subGroup, "sh", "-c", "echo hello")
+			go cmdVtx(subCtx, subGroup, "sh", "-c", "echo hello")
 		}
 
 		select {
-		case <-time.After(time.Second):
+		case <-time.After(500 * time.Millisecond):
 		case <-ctx.Done():
 			break dance
 		}
@@ -156,5 +179,40 @@ dance:
 
 	wg.Wait()
 
-	rec.Close()
+	return rec.Close()
+}
+
+func cmdPane(rec *progrock.Recorder, exe string, args ...string) {
+	cmd := exec.Command(exe, args...)
+
+	name := strings.Join(append([]string{exe}, args...), " ")
+
+	var vtx *progrock.VertexRecorder
+	vtx = rec.Vertex(digest.FromString(name), name, progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
+		p, err := pty.StartWithSize(cmd, &pty.Winsize{
+			Rows: uint16(term.Height),
+			Cols: uint16(term.Width),
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		go func() {
+			vtx.Done(cmd.Wait())
+		}()
+
+		term.ForwardRequests = os.Stdin
+		term.ForwardResponses = p
+
+		go io.Copy(term, p)
+
+		term.OnResize(func(rows, cols int) {
+			pty.Setsize(p, &pty.Winsize{
+				Rows: uint16(rows),
+				Cols: uint16(cols),
+			})
+		})
+
+		return p
+	}))
 }

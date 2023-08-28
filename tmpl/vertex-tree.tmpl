@@ -1,4 +1,4 @@
-{{- .Name | words -}}
+{{- .Name | words | join " " -}}
 {{- if .Canceled -}}
 {{-   " " -}}
 {{-   Foreground "11" "CANCELED" -}}

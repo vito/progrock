@@ -28,28 +28,10 @@ func TestSingle(t *testing.T) {
 	testGolden(t, tape)
 }
 
-func TestSingleNoGroup(t *testing.T) {
-	tape := progrock.NewTape()
-
-	recorder := progrock.NewPassthroughRecorder(tape)
-	recorder.Vertex("a", "vertex a").Done(nil)
-
-	testGolden(t, tape)
-}
-
 func TestSingleRunning(t *testing.T) {
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
-	runningVtx(recorder, "a", "vertex a")
-
-	testGolden(t, tape)
-}
-
-func TestSingleRunningNoGroup(t *testing.T) {
-	tape := progrock.NewTape()
-
-	recorder := progrock.NewPassthroughRecorder(tape)
 	runningVtx(recorder, "a", "vertex a")
 
 	testGolden(t, tape)
@@ -87,15 +69,6 @@ func TestSingleErrored(t *testing.T) {
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
-	runningVtx(recorder, "a", "vertex a").Done(fmt.Errorf("nope"))
-
-	testGolden(t, tape)
-}
-
-func TestSingleErroredNoGroup(t *testing.T) {
-	tape := progrock.NewTape()
-
-	recorder := progrock.NewPassthroughRecorder(tape)
 	runningVtx(recorder, "a", "vertex a").Done(fmt.Errorf("nope"))
 
 	testGolden(t, tape)
@@ -309,6 +282,29 @@ func TestInternalErrored(t *testing.T) {
 	runningVtx(recorder, "a", "vertex a", progrock.Internal()).Done(fmt.Errorf("nope"))
 
 	testGolden(t, tape)
+}
+
+func TestUnfocusedErrored(t *testing.T) {
+	t.Run("no reveal", func(t *testing.T) {
+		tape := progrock.NewTape()
+		tape.Focus(true)
+
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a", progrock.Internal()).Done(fmt.Errorf("nope"))
+
+		testGolden(t, tape)
+	})
+
+	t.Run("with reveal", func(t *testing.T) {
+		tape := progrock.NewTape()
+		tape.Focus(true)
+		tape.RevealErrored(true)
+
+		recorder := progrock.NewRecorder(tape)
+		runningVtx(recorder, "a", "vertex a", progrock.Internal()).Done(fmt.Errorf("nope"))
+
+		testGolden(t, tape)
+	})
 }
 
 func TestSingleDoneTasks(t *testing.T) {
@@ -616,7 +612,7 @@ func TestAutoResize(t *testing.T) {
 	t.Run("initially unbounded", func(t *testing.T) {
 		vtx := recorder.Vertex("long", "long lines")
 		for i := 0; i < 200; i++ {
-			fmt.Fprint(vtx.Stdout(), "x")
+			fmt.Fprintf(vtx.Stdout(), "%s", string('a'+(rune(i)%3)))
 		}
 
 		testGoldenAutoResize(t, tape)
@@ -627,7 +623,7 @@ func TestAutoResize(t *testing.T) {
 
 		vtx := recorder.Vertex("long2", "more long lines")
 		for i := 0; i < 200; i++ {
-			fmt.Fprint(vtx.Stdout(), "y")
+			fmt.Fprintf(vtx.Stdout(), "%s", string('a'+(rune(i)%3)))
 		}
 
 		testGoldenAutoResize(t, tape)

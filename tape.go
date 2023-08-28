@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/muesli/termenv"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock/ui"
 	"golang.org/x/exp/slices"
 )
@@ -19,6 +20,11 @@ import (
 type Tape struct {
 	// order to display vertices
 	order []string
+
+	// zoomed vertices
+	zoomed   map[string]*zoomState
+	lastZoom *zoomState
+	zoomHook func(*zoomState)
 
 	// raw vertex/group state from the event stream
 	vertexes map[string]*Vertex
@@ -48,6 +54,7 @@ type Tape struct {
 	// UI config
 	verboseEdges  bool // show edges between vertexes in the same group
 	showInternal  bool // show internal vertexes
+	revealErrored bool // show errored vertexes no matter what
 	showAllOutput bool // show output even for completed vertexes
 	focus         bool // only show 'focused' vertex output, condensing the rest
 
@@ -58,6 +65,11 @@ type Tape struct {
 	messageLevel MessageLevel
 
 	l sync.Mutex
+}
+
+type zoomState struct {
+	Input  io.Writer
+	Output *midterm.Terminal
 }
 
 const (
@@ -105,8 +117,10 @@ func NewTape() *Tape {
 		vertex2groups:  make(map[string]map[string]struct{}),
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
+		zoomed:         make(map[string]*zoomState),
 
-		// for explicitness: default to unbounded screen size
+		// default to unbounded screen size so we don't arbitrarily wrap log output
+		// when no size is given
 		width:  -1,
 		height: -1,
 
@@ -143,26 +157,27 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		} else {
 			tape.vertexes[v.Id] = v
 		}
+
+		_, isZoomed := tape.zoomed[v.Id]
+		if v.Zoomed && !isZoomed {
+			tape.initZoom(v)
+		} else if isZoomed {
+			tape.releaseZoom(v)
+		}
 	}
 
 	for _, t := range status.Tasks {
-		tasks := tape.tasks[t.Vertex]
-		var updated bool
-		for i, task := range tasks {
-			if task.Name == t.Name {
-				tasks[i] = t
-				updated = true
-			}
-		}
-		if !updated {
-			tasks = append(tasks, t)
-			tape.tasks[t.Vertex] = tasks
-		}
+		tape.recordTask(t)
 	}
 
 	for _, l := range status.Logs {
-		sink := tape.vertexLogs(l.Vertex)
-		_, err := sink.Write(l.Data)
+		var w io.Writer
+		if t, found := tape.zoomed[l.Vertex]; found {
+			w = t.Output
+		} else {
+			w = tape.vertexLogs(l.Vertex)
+		}
+		_, err := w.Write(l.Data)
 		if err != nil {
 			return fmt.Errorf("write logs: %w", err)
 		}
@@ -195,6 +210,39 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	}
 
 	return nil
+}
+
+func (tape *Tape) initZoom(v *Vertex) {
+	var vt *midterm.Terminal
+	if tape.height == -1 || tape.width == -1 {
+		vt = midterm.NewAutoResizingTerminal()
+	} else {
+		vt = midterm.NewTerminal(tape.height, tape.width)
+	}
+	w := setupTerm(v.Id, vt)
+	tape.zoomed[v.Id] = &zoomState{
+		Output: vt,
+		Input:  w,
+	}
+}
+
+func (tape *Tape) releaseZoom(vtx *Vertex) {
+	delete(tape.zoomed, vtx.Id)
+}
+
+func (tape *Tape) recordTask(t *VertexTask) {
+	tasks := tape.tasks[t.Vertex]
+	var updated bool
+	for i, task := range tasks {
+		if task.Name == t.Name {
+			tasks[i] = t
+			updated = true
+		}
+	}
+	if !updated {
+		tasks = append(tasks, t)
+		tape.tasks[t.Vertex] = tasks
+	}
 }
 
 func (tape *Tape) log(msg *Message) {
@@ -416,6 +464,16 @@ func (tape *Tape) ShowInternal(show bool) {
 	tape.showInternal = show
 }
 
+// RevealErrored sets whether to show errored vertexes even when they would
+// otherwise not be shown (i.e. internal, or focusing). You may want to set
+// this when debugging, or for features that might break when bootstrapping
+// before a higher level error can be shown.
+func (tape *Tape) RevealErrored(reveal bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.revealErrored = reveal
+}
+
 // ShowAllOutput sets whether to show output even for successful vertexes.
 func (tape *Tape) ShowAllOutput(show bool) {
 	tape.l.Lock()
@@ -447,6 +505,9 @@ func (tape *Tape) SetWindowSize(w, h int) {
 	for _, l := range tape.logs {
 		l.SetWidth(w)
 	}
+	for _, t := range tape.zoomed {
+		t.Output.Resize(h, w)
+	}
 	tape.globalLogs.SetWidth(w)
 	tape.l.Unlock()
 }
@@ -469,8 +530,17 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
+	zoomSt := tape.currentZoom()
+
+	if zoomSt != tape.lastZoom {
+		tape.zoomHook(zoomSt)
+		tape.lastZoom = zoomSt
+	}
+
 	var err error
-	if tape.focus {
+	if zoomSt != nil {
+		err = tape.renderZoomed(w, u, zoomSt)
+	} else if tape.focus {
 		err = tape.renderTree(w, u)
 	} else {
 		err = tape.renderDAG(w, u)
@@ -483,6 +553,34 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	fmt.Fprint(w, tape.globalLogs.View())
 
 	return nil
+}
+
+func (tape *Tape) currentZoom() *zoomState {
+	var firstZoomed *Vertex
+	var firstState *zoomState
+	for vId, st := range tape.zoomed {
+		v, found := tape.vertexes[vId]
+		if !found {
+			// should be impossible
+			continue
+		}
+
+		if v.Started == nil {
+			// just being defensive, theoretically this is a valid state
+			continue
+		}
+
+		if firstZoomed == nil || v.Started.AsTime().Before(firstZoomed.Started.AsTime()) {
+			firstZoomed = v
+			firstState = st
+		}
+	}
+
+	return firstState
+}
+
+func (tape *Tape) renderZoomed(w io.Writer, u *UI, st *zoomState) error {
+	return st.Output.Render(w)
 }
 
 func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
@@ -596,18 +694,6 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 	groups.Reap(groupsW, u, nil)
 
 	return nil
-}
-
-func (b *bouncer) Ancestry(grp *Group) []*Group {
-	if grp == nil {
-		return nil
-	}
-
-	if grp.Parent == nil {
-		return []*Group{grp}
-	}
-
-	return append(b.Ancestry(b.groups[*grp.Parent]), grp)
 }
 
 func (tape *Tape) renderTree(w io.Writer, u *UI) error {
@@ -767,8 +853,9 @@ func (tape *Tape) bouncer() *bouncer {
 		vertices:      tape.vertexes,
 		vertex2groups: tape.vertex2groups,
 
-		focus:        tape.focus,
-		showInternal: tape.showInternal,
+		focus:         tape.focus,
+		showInternal:  tape.showInternal,
+		revealErrored: tape.revealErrored,
 	}
 }
 
@@ -781,6 +868,12 @@ func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
 		}
 	}
 	return nil
+}
+
+func (tape *Tape) setZoomHook(fn func(*zoomState)) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.zoomHook = fn
 }
 
 func (tape *Tape) insert(id string, vtx *Vertex) {
@@ -826,8 +919,9 @@ type bouncer struct {
 	group2vertexes map[string]map[string]struct{}
 	vertex2groups  map[string]map[string]struct{}
 
-	focus        bool
-	showInternal bool
+	focus         bool
+	showInternal  bool
+	revealErrored bool
 }
 
 func (b *bouncer) Groups(vtx *Vertex) []*Group {
@@ -849,15 +943,14 @@ func (b *bouncer) Groups(vtx *Vertex) []*Group {
 }
 
 func (b *bouncer) IsVisible(vtx *Vertex) bool {
+	if vtx.Error != nil && b.revealErrored {
+		// show errored vertices no matter what
+		return true
+	}
+
 	if vtx.Internal && !b.showInternal {
 		// filter out internal vertices unless we're showing them
 		return false
-	}
-
-	if vtx.Error != nil {
-		// in general, show errored vertexes, except internal ones since they may
-		// already be captured and presented in a nicer manner instead
-		return true
 	}
 
 	if b.focus && !vtx.Focused {
