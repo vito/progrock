@@ -39,8 +39,8 @@ func Internal() VertexOpt {
 	}
 }
 
-// ResizeFunc is a function that gets called when the vertex's zoomed pane
-// resizes.
+// TermSetupFunc is a function that gets called when the vertex's zoomed pane
+// resizes. It returns an optional io.Writer for accepting user input.
 type TermSetupFunc func(*midterm.Terminal) io.Writer
 
 var (
