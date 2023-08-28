@@ -168,7 +168,7 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	inR, inW := io.Pipe()
 
 	sw := &swappableWriter{original: inW}
-	tape.setZoomHook(func(st *ZoomedState) { // TODO weird tight coupling.
+	tape.setZoomHook(func(st *zoomState) { // TODO weird tight coupling.
 		if st == nil {
 			sw.Restore()
 

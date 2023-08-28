@@ -15,12 +15,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type ZoomedState struct {
-	Vertex *Vertex
-	Input  io.Writer
-	Output *midterm.Terminal
-}
-
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
 type Tape struct {
@@ -28,9 +22,9 @@ type Tape struct {
 	order []string
 
 	// zoomed vertices
-	zoomed   map[string]*ZoomedState
-	lastZoom *ZoomedState
-	zoomHook func(*ZoomedState)
+	zoomed   map[string]*zoomState
+	lastZoom *zoomState
+	zoomHook func(*zoomState)
 
 	// raw vertex/group state from the event stream
 	vertexes map[string]*Vertex
@@ -71,6 +65,11 @@ type Tape struct {
 	messageLevel MessageLevel
 
 	l sync.Mutex
+}
+
+type zoomState struct {
+	Input  io.Writer
+	Output *midterm.Terminal
 }
 
 const (
@@ -118,7 +117,7 @@ func NewTape() *Tape {
 		vertex2groups:  make(map[string]map[string]struct{}),
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
-		zoomed:         make(map[string]*ZoomedState),
+		zoomed:         make(map[string]*zoomState),
 
 		// default to unbounded screen size so we don't arbitrarily wrap log output
 		// when no size is given
@@ -221,7 +220,7 @@ func (tape *Tape) initZoom(v *Vertex) {
 		vt = midterm.NewTerminal(tape.height, tape.width)
 	}
 	w := setupTerm(v.Id, vt)
-	tape.zoomed[v.Id] = &ZoomedState{
+	tape.zoomed[v.Id] = &zoomState{
 		Output: vt,
 		Input:  w,
 	}
@@ -556,9 +555,9 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) currentZoom() *ZoomedState {
+func (tape *Tape) currentZoom() *zoomState {
 	var firstZoomed *Vertex
-	var firstZoomedState *ZoomedState
+	var firstState *zoomState
 	for vId, st := range tape.zoomed {
 		v, found := tape.vertexes[vId]
 		if !found {
@@ -573,14 +572,14 @@ func (tape *Tape) currentZoom() *ZoomedState {
 
 		if firstZoomed == nil || v.Started.AsTime().Before(firstZoomed.Started.AsTime()) {
 			firstZoomed = v
-			firstZoomedState = st
+			firstState = st
 		}
 	}
 
-	return firstZoomedState
+	return firstState
 }
 
-func (tape *Tape) renderZoomed(w io.Writer, u *UI, st *ZoomedState) error {
+func (tape *Tape) renderZoomed(w io.Writer, u *UI, st *zoomState) error {
 	return st.Output.Render(w)
 }
 
@@ -871,7 +870,7 @@ func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
 	return nil
 }
 
-func (tape *Tape) setZoomHook(fn func(*ZoomedState)) {
+func (tape *Tape) setZoomHook(fn func(*zoomState)) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	tape.zoomHook = fn
