@@ -49,7 +49,7 @@ func main() {
 
 	ctx := context.Background()
 	rec := progrock.NewRecorder(tape)
-	ctx = progrock.RecorderToContext(ctx, rec)
+	ctx = progrock.ToContext(ctx, rec)
 
 	err := progrock.DefaultUI().Run(ctx, tape, demo)
 	if err != nil {
@@ -58,7 +58,7 @@ func main() {
 }
 
 func demo(ctx context.Context, ui progrock.UIClient) error {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	if true {
 		cmdPane(rec, "htop")
