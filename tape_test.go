@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
@@ -12,14 +13,24 @@ import (
 	"github.com/vito/progrock"
 )
 
-var ui = progrock.DefaultUI()
-
 func TestEmpty(t *testing.T) {
 	tape := progrock.NewTape()
 	testGolden(t, tape)
 }
 
 func TestSingle(t *testing.T) {
+	tape := progrock.NewTape()
+
+	recorder := progrock.NewRecorder(tape)
+	recorder.Vertex("a", "vertex a").Done(nil)
+
+	testGolden(t, tape)
+}
+
+func TestSingleNoColor(t *testing.T) {
+	os.Setenv("NO_COLOR", "1")
+	defer os.Setenv("NO_COLOR", "")
+
 	tape := progrock.NewTape()
 
 	recorder := progrock.NewRecorder(tape)
@@ -666,6 +677,8 @@ func TestMessages(t *testing.T) {
 }
 
 func testGolden(t *testing.T, tape *progrock.Tape) {
+	ui := progrock.DefaultUI()
+
 	buf := new(bytes.Buffer)
 	tape.SetWindowSize(80, 24)
 
@@ -679,6 +692,8 @@ func testGolden(t *testing.T, tape *progrock.Tape) {
 }
 
 func testGoldenAutoResize(t *testing.T, tape *progrock.Tape) {
+	ui := progrock.DefaultUI()
+
 	buf := new(bytes.Buffer)
 	tape.Render(buf, ui)
 

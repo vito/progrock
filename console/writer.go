@@ -6,6 +6,7 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/ui"
 )
 
 type Writer struct {
@@ -46,27 +47,29 @@ func WithMessageLevel(level progrock.MessageLevel) WriterOpt {
 	}
 }
 
-func NewWriter(dest io.Writer, opts ...WriterOpt) progrock.Writer {
-	w := &Writer{
+func NewWriter(w io.Writer, opts ...WriterOpt) progrock.Writer {
+	out := ui.NewOutput(w)
+
+	progW := &Writer{
 		clock:        clockwork.NewRealClock(),
-		ui:           DefaultUI,
+		ui:           DefaultUI(out),
 		showInternal: false,
 		messageLevel: progrock.MessageLevel_WARNING,
 	}
 
 	for _, opt := range opts {
-		opt(w)
+		opt(progW)
 	}
 
-	w.trace = newTrace(w.ui, w.clock)
-	w.mux = &textMux{
-		w:            dest,
-		ui:           w.ui,
-		showInternal: w.showInternal,
-		messageLevel: w.messageLevel,
+	progW.trace = newTrace(progW.ui, progW.clock)
+	progW.mux = &textMux{
+		w:            out,
+		ui:           progW.ui,
+		showInternal: progW.showInternal,
+		messageLevel: progW.messageLevel,
 	}
 
-	return w
+	return progW
 }
 
 func (w *Writer) WriteStatus(status *progrock.StatusUpdate) error {

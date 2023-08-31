@@ -1,0 +1,5 @@
+1: sup
+1: [0.00s] hi stdout
+1: [0.00s] hi stderr
+1: [0.00s] hi again stdout
+1: sup ERROR: oh no!

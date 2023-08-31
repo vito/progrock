@@ -278,22 +278,24 @@ type Components struct {
 	RunningDuration, DoneDuration string
 }
 
-var vertexID = termenv.String("%d:").Foreground(termenv.ANSIMagenta).String()
+func DefaultUI(out *termenv.Output) Components {
+	var vertexID = out.String("%d:").Foreground(termenv.ANSIMagenta).String()
 
-var DefaultUI = Components{
-	TextLogFormat:                 vertexID + " %s %s",
-	TextContextSwitched:           vertexID + " ...\n",
-	TextVertexRunning:             vertexID + " %s",
-	TextVertexCanceled:            vertexID + " %s " + termenv.String("CANCELED").Foreground(termenv.ANSIYellow).String(),
-	TextVertexErrored:             vertexID + " %s " + termenv.String("ERROR: %s").Foreground(termenv.ANSIRed).String(),
-	TextVertexCached:              vertexID + " %s " + termenv.String("CACHED").Foreground(termenv.ANSICyan).String(),
-	TextVertexDone:                vertexID + " %s " + termenv.String("DONE").Foreground(termenv.ANSIGreen).String(),
-	TextVertexGroup:               vertexID + " > in " + termenv.String("%s").Foreground(termenv.ANSIBlue).String(),
-	TextVertexTask:                vertexID + " %[3]s %[2]s",
-	TextVertexTaskProgressBound:   "%s / %s",
-	TextVertexTaskProgressUnbound: "%s",
-	TextVertexTaskDuration:        "%.1fs",
+	return Components{
+		TextLogFormat:                 vertexID + " %s %s",
+		TextContextSwitched:           vertexID + " ...\n",
+		TextVertexRunning:             vertexID + " %s",
+		TextVertexCanceled:            vertexID + " %s " + out.String("CANCELED").Foreground(termenv.ANSIYellow).String(),
+		TextVertexErrored:             vertexID + " %s " + out.String("ERROR: %s").Foreground(termenv.ANSIRed).String(),
+		TextVertexCached:              vertexID + " %s " + out.String("CACHED").Foreground(termenv.ANSICyan).String(),
+		TextVertexDone:                vertexID + " %s " + out.String("DONE").Foreground(termenv.ANSIGreen).String(),
+		TextVertexGroup:               vertexID + " > in " + out.String("%s").Foreground(termenv.ANSIBlue).String(),
+		TextVertexTask:                vertexID + " %[3]s %[2]s",
+		TextVertexTaskProgressBound:   "%s / %s",
+		TextVertexTaskProgressUnbound: "%s",
+		TextVertexTaskDuration:        "%.1fs",
 
-	RunningDuration: "[%.[2]*[1]fs]",
-	DoneDuration:    termenv.String("[%.[2]*[1]fs]").Foreground(termenv.ANSIBrightBlack).String(),
+		RunningDuration: "[%.[2]*[1]fs]",
+		DoneDuration:    out.String("[%.[2]*[1]fs]").Foreground(termenv.ANSIBrightBlack).String(),
+	}
 }

@@ -45,6 +45,9 @@ type Tape struct {
 	// the time that tape was created and closed
 	createdAt time.Time
 
+	// color profile loaded from the env when the tape was constructed
+	colorProfile termenv.Profile
+
 	// screen width and height
 	width, height int
 
@@ -59,7 +62,8 @@ type Tape struct {
 	focus         bool // only show 'focused' vertex output, condensing the rest
 
 	// output from messages and internal debugging
-	globalLogs *ui.Vterm
+	globalLogs  *ui.Vterm
+	globalLogsW *termenv.Output
 
 	// minimum message level to display to the user
 	messageLevel MessageLevel
@@ -110,6 +114,10 @@ const (
 
 // NewTape returns a new Tape.
 func NewTape() *Tape {
+	colorProfile := ui.ColorProfile()
+
+	logs := ui.NewVterm()
+
 	return &Tape{
 		vertexes:       make(map[string]*Vertex),
 		groups:         make(map[string]*Group),
@@ -124,10 +132,13 @@ func NewTape() *Tape {
 		width:  -1,
 		height: -1,
 
+		colorProfile: colorProfile,
+
 		// sane default before window size is known
 		termHeight: 10,
 
-		globalLogs: ui.NewVterm(),
+		globalLogs:  logs,
+		globalLogsW: ui.NewOutput(logs, termenv.WithProfile(colorProfile)),
 
 		messageLevel: MessageLevel_WARNING,
 
@@ -250,29 +261,29 @@ func (tape *Tape) log(msg *Message) {
 		return
 	}
 
-	WriteMessage(tape.globalLogs, msg)
+	WriteMessage(tape.globalLogsW, msg)
 }
 
-func WriteMessage(w io.Writer, msg *Message) error {
+func WriteMessage(out *termenv.Output, msg *Message) error {
 	var prefix termenv.Style
 	switch msg.Level {
 	case MessageLevel_DEBUG:
-		prefix = termenv.String("DEBUG:").Foreground(termenv.ANSIBlue).Bold()
+		prefix = out.String("DEBUG:").Foreground(termenv.ANSIBlue).Bold()
 	case MessageLevel_WARNING:
-		prefix = termenv.String("WARNING:").Foreground(termenv.ANSIYellow).Bold()
+		prefix = out.String("WARNING:").Foreground(termenv.ANSIYellow).Bold()
 	case MessageLevel_ERROR:
-		prefix = termenv.String("ERROR:").Foreground(termenv.ANSIRed).Bold()
+		prefix = out.String("ERROR:").Foreground(termenv.ANSIRed).Bold()
 	}
 
-	out := msg.Message
+	str := msg.Message
 	for _, l := range msg.Labels {
-		out += " "
-		out += termenv.String(fmt.Sprintf("%s=%q", l.Name, l.Value)).
+		str += " "
+		str += out.String(fmt.Sprintf("%s=%q", l.Name, l.Value)).
 			Foreground(termenv.ANSIBrightBlack).
 			String()
 	}
 
-	_, err := fmt.Fprintln(w, prefix, out)
+	_, err := fmt.Fprintln(out, prefix, str)
 	return err
 }
 
@@ -530,6 +541,8 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
+	out := ui.NewOutput(w, termenv.WithProfile(tape.colorProfile))
+
 	zoomSt := tape.currentZoom()
 
 	if zoomSt != tape.lastZoom {
@@ -543,7 +556,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	} else if tape.focus {
 		err = tape.renderTree(w, u)
 	} else {
-		err = tape.renderDAG(w, u)
+		err = tape.renderDAG(out, u)
 	}
 	if err != nil {
 		return err
@@ -583,15 +596,8 @@ func (tape *Tape) renderZoomed(w io.Writer, u *UI, st *zoomState) error {
 	return st.Output.Render(w)
 }
 
-func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
+func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 	b := tape.bouncer()
-
-	var groupsW io.Writer
-	if tape.focus {
-		groupsW = io.Discard
-	} else {
-		groupsW = w
-	}
 
 	var completed []*Vertex
 	var runningAndFailed []*Vertex
@@ -616,10 +622,10 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 			}
 		}
 
-		groups = groups.Reap(groupsW, u, order[i:])
+		groups = groups.Reap(out, u, order[i:])
 
 		for _, g := range b.Groups(vtx) {
-			groups = groups.AddGroup(groupsW, u, b, g, tape.log)
+			groups = groups.AddGroup(out, u, b, g, tape.log)
 		}
 
 		if !b.IsVisible(vtx) {
@@ -631,15 +637,15 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
 
-		groups.VertexPrefix(groupsW, u, vtx, symbol, tape.log)
-		if err := u.RenderVertex(w, vtx); err != nil {
+		groups.VertexPrefix(out, u, vtx, symbol, tape.log)
+		if err := u.RenderVertex(out, vtx); err != nil {
 			return err
 		}
 
 		tasks := tape.tasks[vtx.Id]
 		for _, t := range tasks {
-			groups.TaskPrefix(groupsW, u, vtx)
-			if err := u.RenderTask(w, t); err != nil {
+			groups.TaskPrefix(out, u, vtx)
+			if err := u.RenderTask(out, t); err != nil {
 				return err
 			}
 		}
@@ -663,7 +669,7 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 		}
 
 		if len(haveInput) > 0 {
-			groups = groups.AddVertex(groupsW, u, tape.groups, vtx, haveInput)
+			groups = groups.AddVertex(out, u, tape.groups, vtx, haveInput)
 		}
 
 		if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
@@ -677,7 +683,8 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 
 			if !tape.focus {
 				buf := new(bytes.Buffer)
-				groups.TermPrefix(buf, u, vtx)
+				prefixOut := ui.NewOutput(buf, termenv.WithProfile(out.Profile))
+				groups.TermPrefix(prefixOut, u, vtx)
 				term.SetPrefix(buf.String())
 			}
 
@@ -685,19 +692,21 @@ func (tape *Tape) renderDAG(w io.Writer, u *UI) error {
 				term.SetHeight(term.UsedHeight())
 			}
 
-			if err := u.RenderTerm(w, term); err != nil {
+			if err := u.RenderTerm(out, term); err != nil {
 				return err
 			}
 		}
 	}
 
-	groups.Reap(groupsW, u, nil)
+	groups.Reap(out, u, nil)
 
 	return nil
 }
 
 func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 	b := tape.bouncer()
+
+	out := ui.NewOutput(w, termenv.WithProfile(tape.colorProfile))
 
 	var groups []*Group
 	for _, group := range b.groups {
@@ -729,7 +738,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 			color = termenv.ANSIYellow
 		}
 
-		symbol = termenv.String(symbol).Foreground(color).String()
+		symbol = out.String(symbol).Foreground(color).String()
 
 		fmt.Fprintf(w, "%s%s ", indent, symbol)
 
@@ -755,7 +764,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 				term.SetHeight(tape.termHeight)
 			}
 
-			term.SetPrefix(indent + termenv.String(vbBar).Foreground(color).String() + " ")
+			term.SetPrefix(indent + out.String(vbBar).Foreground(color).String() + " ")
 
 			if tape.closed {
 				term.SetHeight(term.UsedHeight())
@@ -816,7 +825,7 @@ func (tape *Tape) renderTree(w io.Writer, u *UI) error {
 			}
 			names = append(names, g.Name)
 			groupPath := strings.Join(names, " "+rCaret+" ")
-			fmt.Fprintf(w, "%s%s %s\n", indent, rCaret, termenv.String(groupPath).Bold())
+			fmt.Fprintf(w, "%s%s %s\n", indent, rCaret, out.String(groupPath).Bold())
 			indent += "  "
 		}
 
@@ -1180,7 +1189,7 @@ func (vg vertexGroup) WitnessedAll() bool {
 }
 
 // AddVertex adds a group to the set of groups. It also renders the new groups.
-func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Group, log func(*Message)) progressGroups {
+func (groups progressGroups) AddGroup(out *termenv.Output, u *UI, b *bouncer, group *Group, log func(*Message)) progressGroups {
 	pg := progGroup{group, b}
 
 	if len(groups) == 0 && group.Name == RootGroup {
@@ -1215,8 +1224,8 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Gro
 			return groups
 		}
 
-		return groups.AddGroup(w, u, b, parent, log).
-			AddGroup(w, u, b, group, log)
+		return groups.AddGroup(out, u, b, parent, log).
+			AddGroup(out, u, b, group, log)
 	}
 
 	var added bool
@@ -1240,53 +1249,53 @@ func (groups progressGroups) AddGroup(w io.Writer, u *UI, b *bouncer, group *Gro
 	for i, g := range groups {
 		if i == parentIdx && addedIdx > parentIdx {
 			// line towards the right of the parent
-			fmt.Fprint(w, groupColor(parentIdx, vrbBar))
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, parentIdx, vrbBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if i == parentIdx && addedIdx < parentIdx {
 			// line towards the left of the parent
-			fmt.Fprint(w, groupColor(parentIdx, vlbBar))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, groupColor(out, parentIdx, vlbBar))
+			fmt.Fprint(out, " ")
 		} else if i == addedIdx && addedIdx > parentIdx {
 			// line left from parent and down to added line
-			fmt.Fprint(w, groupColor(addedIdx, trCorner))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, groupColor(out, addedIdx, trCorner))
+			fmt.Fprint(out, " ")
 		} else if i == addedIdx && addedIdx < parentIdx {
 			// line up from added line and right to parent
-			fmt.Fprint(w, groupColor(addedIdx, tlCorner))
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, tlCorner))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, tBar))
+				fmt.Fprint(out, groupColor(out, i, tBar))
 			} else {
-				fmt.Fprint(w, groupColor(addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 			}
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, tBar))
+				fmt.Fprint(out, groupColor(out, i, tBar))
 			} else {
-				fmt.Fprint(w, groupColor(addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 			}
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if groups[i] != nil {
-			fmt.Fprint(w, groupColor(i, inactiveGroupSymbol))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, groupColor(out, i, inactiveGroupSymbol))
+			fmt.Fprint(out, " ")
 		} else {
-			fmt.Fprint(w, "  ")
+			fmt.Fprint(out, "  ")
 		}
 	}
 
-	fmt.Fprintln(w)
-	groups.GroupName(w, u, group)
+	fmt.Fprintln(out)
+	groups.GroupName(out, u, group)
 
 	return groups
 }
 
 // AddVertex adds a vertex-group to the set of groups, which is used to connect
 // vertex inputs and outputs. It also renders the new groups.
-func (groups progressGroups) AddVertex(w io.Writer, u *UI, allGroups map[string]*Group, vtx *Vertex, outputs []*Vertex) progressGroups {
+func (groups progressGroups) AddVertex(out *termenv.Output, u *UI, allGroups map[string]*Group, vtx *Vertex, outputs []*Vertex) progressGroups {
 	vg := vertexGroup{
 		vtx,
 		outputs,
@@ -1327,54 +1336,54 @@ func (groups progressGroups) AddVertex(w io.Writer, u *UI, allGroups map[string]
 	for i, g := range groups {
 		if i == parentIdx && addedIdx > parentIdx {
 			// line towards the right of the parent
-			fmt.Fprint(w, groupColor(parentIdx, vrbBar))
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, parentIdx, vrbBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if i == parentIdx && addedIdx < parentIdx {
 			// line towards the left of the parent
-			fmt.Fprint(w, groupColor(parentIdx, vlbBar))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, groupColor(out, parentIdx, vlbBar))
+			fmt.Fprint(out, " ")
 		} else if parentIdx != -1 && i == addedIdx && addedIdx > parentIdx {
 			// line left from parent and down to added line
-			fmt.Fprint(w, groupColor(addedIdx, trCorner))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, groupColor(out, addedIdx, trCorner))
+			fmt.Fprint(out, " ")
 		} else if parentIdx != -1 && i == addedIdx && addedIdx < parentIdx {
 			// line up from added line and right to parent
-			fmt.Fprint(w, groupColor(addedIdx, tlCorner))
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, tlCorner))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, tBar))
+				fmt.Fprint(out, groupColor(out, i, tBar))
 			} else {
-				fmt.Fprint(w, groupColor(addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 			}
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, tBar))
+				fmt.Fprint(out, groupColor(out, i, tBar))
 			} else {
-				fmt.Fprint(w, groupColor(addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 			}
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if parentIdx == -1 && i == addedIdx {
-			fmt.Fprint(w, groupColor(addedIdx, emptyDot)) // TODO pointless?
-			fmt.Fprint(w, groupColor(addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, emptyDot)) // TODO pointless?
+			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
 		} else if groups[i] != nil {
-			fmt.Fprint(w, groupColor(i, inactiveGroupSymbol))
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, groupColor(out, i, inactiveGroupSymbol))
+			fmt.Fprint(out, " ")
 		} else {
-			fmt.Fprint(w, "  ")
+			fmt.Fprint(out, "  ")
 		}
 	}
 
-	fmt.Fprintln(w, termenv.String(vtx.Name).Foreground(termenv.ANSIBrightBlack))
+	fmt.Fprintln(out, out.String(vtx.Name).Foreground(termenv.ANSIBrightBlack))
 
 	return groups
 }
 
 // VertexPrefix prints the prefix for a vertex.
-func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfSymbol string, log func(*Message)) {
+func (groups progressGroups) VertexPrefix(out *termenv.Output, u *UI, vtx *Vertex, selfSymbol string, log func(*Message)) {
 	var firstParentIdx = -1
 	var lastParentIdx = -1
 	var vtxIdx = -1
@@ -1410,11 +1419,11 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 		var symbol string
 		if g == nil {
 			if firstParentIdx != -1 && i < vtxIdx && i >= firstParentIdx {
-				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, firstParentIdx, hBar))
 			} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
-				fmt.Fprint(w, groupColor(lastParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, hBar))
 			} else {
-				fmt.Fprint(w, " ")
+				fmt.Fprint(out, " ")
 			}
 		} else {
 			if g.DirectlyContains(vtx) {
@@ -1449,36 +1458,36 @@ func (groups progressGroups) VertexPrefix(w io.Writer, u *UI, vtx *Vertex, selfS
 			}
 
 			// respect color of the group
-			fmt.Fprint(w, groupColor(i, symbol))
+			fmt.Fprint(out, groupColor(out, i, symbol))
 		}
 
 		if firstParentIdx != -1 && vtxIdx > firstParentIdx && i >= firstParentIdx && i < vtxIdx {
 			if i+1 == vtxIdx {
-				fmt.Fprint(w, groupColor(firstParentIdx, rCaret))
+				fmt.Fprint(out, groupColor(out, firstParentIdx, rCaret))
 			} else {
-				fmt.Fprint(w, groupColor(firstParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, firstParentIdx, hBar))
 			}
 		} else if firstParentIdx != -1 && vtxIdx < firstParentIdx && i >= vtxIdx && i < lastParentIdx {
 			if i == vtxIdx {
-				fmt.Fprint(w, groupColor(lastParentIdx, lCaret))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, lCaret))
 			} else {
-				fmt.Fprint(w, groupColor(lastParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, hBar))
 			}
 		} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
 			if i == vtxIdx {
-				fmt.Fprint(w, groupColor(lastParentIdx, lCaret))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, lCaret))
 			} else {
-				fmt.Fprint(w, groupColor(lastParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, hBar))
 			}
 		} else {
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, " ")
 		}
 	}
 }
 
 // TaskPrefix prints the prefix for a vertex's task.
-func (groups progressGroups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
-	groups.printPrefix(w, func(g progressGroup, vtx *Vertex) string {
+func (groups progressGroups) TaskPrefix(out *termenv.Output, u *UI, vtx *Vertex) {
+	groups.printPrefix(out, func(g progressGroup, vtx *Vertex) string {
 		if g.DirectlyContains(vtx) {
 			return taskSymbol
 		}
@@ -1487,8 +1496,8 @@ func (groups progressGroups) TaskPrefix(w io.Writer, u *UI, vtx *Vertex) {
 }
 
 // GroupName prints the prefix and name for newly added group.
-func (groups progressGroups) GroupName(w io.Writer, u *UI, group *Group) {
-	groups.printPrefix(w, func(g progressGroup, _ *Vertex) string {
+func (groups progressGroups) GroupName(out *termenv.Output, u *UI, group *Group) {
+	groups.printPrefix(out, func(g progressGroup, _ *Vertex) string {
 		if g.ID() == group.Id {
 			if group.Weak {
 				return dEmptyCaret
@@ -1499,15 +1508,15 @@ func (groups progressGroups) GroupName(w io.Writer, u *UI, group *Group) {
 		return inactiveGroupSymbol
 	}, nil)
 	if group.Weak {
-		fmt.Fprintln(w, group.Name)
+		fmt.Fprintln(out, group.Name)
 	} else {
-		fmt.Fprintln(w, termenv.String(group.Name).Bold())
+		fmt.Fprintln(out, out.String(group.Name).Bold())
 	}
 }
 
 // TermPrefix prints the prefix for a vertex's terminal output.
-func (groups progressGroups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
-	groups.printPrefix(w, func(g progressGroup, vtx *Vertex) string {
+func (groups progressGroups) TermPrefix(out *termenv.Output, u *UI, vtx *Vertex) {
+	groups.printPrefix(out, func(g progressGroup, vtx *Vertex) string {
 		if g.DirectlyContains(vtx) {
 			return vbBar
 		}
@@ -1516,7 +1525,7 @@ func (groups progressGroups) TermPrefix(w io.Writer, u *UI, vtx *Vertex) {
 }
 
 // Reap removes groups that are no longer active.
-func (groups progressGroups) Reap(w io.Writer, u *UI, active []*Vertex) progressGroups {
+func (groups progressGroups) Reap(out *termenv.Output, u *UI, active []*Vertex) progressGroups {
 	reaped := map[int]bool{}
 	for i, g := range groups {
 		if g == nil {
@@ -1540,16 +1549,16 @@ func (groups progressGroups) Reap(w io.Writer, u *UI, active []*Vertex) progress
 	if len(reaped) > 0 {
 		for i, g := range groups {
 			if g != nil {
-				fmt.Fprint(w, groupColor(i, inactiveGroupSymbol))
-				fmt.Fprint(w, " ")
+				fmt.Fprint(out, groupColor(out, i, inactiveGroupSymbol))
+				fmt.Fprint(out, " ")
 			} else if reaped[i] {
-				fmt.Fprint(w, groupColor(i, htbBar))
-				fmt.Fprint(w, " ")
+				fmt.Fprint(out, groupColor(out, i, htbBar))
+				fmt.Fprint(out, " ")
 			} else {
-				fmt.Fprint(w, "  ")
+				fmt.Fprint(out, "  ")
 			}
 		}
-		fmt.Fprintln(w)
+		fmt.Fprintln(out)
 	}
 
 	return groups.shrink()
@@ -1567,19 +1576,19 @@ func (groups progressGroups) shrink() progressGroups {
 	return groups
 }
 
-func (groups progressGroups) printPrefix(w io.Writer, sym func(progressGroup, *Vertex) string, vtx *Vertex) {
+func (groups progressGroups) printPrefix(out *termenv.Output, sym func(progressGroup, *Vertex) string, vtx *Vertex) {
 	for i, g := range groups {
 		if g == nil {
-			fmt.Fprint(w, " ")
+			fmt.Fprint(out, " ")
 		} else {
-			fmt.Fprint(w, groupColor(i, sym(g, vtx)))
+			fmt.Fprint(out, groupColor(out, i, sym(g, vtx)))
 		}
-		fmt.Fprint(w, " ")
+		fmt.Fprint(out, " ")
 	}
 }
 
-func groupColor(i int, str string) string {
-	return termenv.String(str).Foreground(
+func groupColor(out *termenv.Output, i int, str string) string {
+	return out.String(str).Foreground(
 		termenv.ANSIColor((i+1)%7) + 1,
 	).String()
 }

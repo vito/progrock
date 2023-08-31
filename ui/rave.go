@@ -44,6 +44,9 @@ type Rave struct {
 	// The animation to display.
 	Frames SpinnerFrames
 
+	// color profile configured at start (to respect NO_COLOR etc)
+	colorProfile termenv.Profile
+
 	// transmits an authenticated Spotify client during the auth callback flow
 	spotifyAuthState    string
 	spotifyAuthVerifier string
@@ -108,6 +111,8 @@ func NewRave() *Rave {
 		Frames: MeterFrames,
 
 		spotifyAuthCh: make(chan *spotify.Client),
+
+		colorProfile: ColorProfile(),
 	}
 
 	r.reset()
@@ -293,7 +298,9 @@ func (rave *Rave) ViewFancy() string {
 	}
 
 	if rave.track != nil && pos != -1 {
-		frame = termenv.String(frame).Foreground(colors[pos%len(colors)]).String()
+		frame = rave.colorProfile.String(frame).
+			Foreground(colors[pos%len(colors)]).
+			String()
 	}
 
 	return frame

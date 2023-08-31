@@ -27,19 +27,27 @@ import (
 type UI struct {
 	Spinner ui.Spinner
 
+	colorProfile termenv.Profile
+
 	width, height int
 
 	tmpl *template.Template
 }
 
 func NewUI(spinner ui.Spinner) *UI {
-	ui := &UI{Spinner: spinner}
+	ui := &UI{
+		colorProfile: ui.ColorProfile(),
+		Spinner:      spinner,
+	}
 	ui.tmpl = template.New("ui").
-		Funcs(termenv.TemplateFuncs(termenv.ANSI)).
+		Funcs(termenv.TemplateFuncs(ui.colorProfile)).
 		Funcs(template.FuncMap{
 			"duration": fmtDuration,
 			"bar": func(current, total int64) string {
-				bar := progress.New(progress.WithSolidFill("2"))
+				bar := progress.New(
+					progress.WithColorProfile(ui.colorProfile),
+					progress.WithSolidFill("2"),
+				)
 				bar.Width = ui.width / 8
 				bar.EmptyColor = "8"
 				bar.ShowPercentage = false
@@ -151,9 +159,9 @@ type UIClient interface {
 	SetStatusInfo(StatusInfo)
 }
 
-func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
+func (u *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	// NOTE: establish color cache before we start consuming stdin
-	out := termenv.NewOutput(os.Stderr, termenv.WithColorCache(true))
+	out := ui.NewOutput(os.Stderr, termenv.WithColorCache(true))
 
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
@@ -185,7 +193,7 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	})
 	go io.Copy(sw, os.Stdin)
 
-	model := ui.newModel(ctx, tape, fn)
+	model := u.newModel(ctx, tape, fn)
 
 	prog := tea.NewProgram(model, tea.WithInput(inR), tea.WithOutput(out))
 
@@ -201,11 +209,11 @@ func (ui *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	return model.err
 }
 
-func (ui *UI) newModel(ctx context.Context, tape *Tape, run RunFunc) *Model {
+func (u *UI) newModel(ctx context.Context, tape *Tape, run RunFunc) *Model {
 	runCtx, interrupt := context.WithCancel(ctx)
 	return &Model{
 		tape: tape,
-		ui:   ui,
+		ui:   u,
 
 		run:       run,
 		runCtx:    runCtx,

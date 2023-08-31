@@ -3,12 +3,12 @@ package console
 import (
 	"container/ring"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/docker/go-units"
+	"github.com/muesli/termenv"
 	"github.com/vito/progrock"
 )
 
@@ -36,7 +36,7 @@ type lastStatus struct {
 }
 
 type textMux struct {
-	w        io.Writer
+	w        *termenv.Output
 	ui       Components
 	current  string
 	last     map[string]lastStatus

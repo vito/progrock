@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/jonboulle/clockwork"
@@ -226,6 +227,35 @@ func TestMessages(t *testing.T) {
 		recorder := progrock.NewRecorder(writer)
 		recorder.Vertex("a", "some vertex").Done(nil)
 		recorder.Error("oh no")
+		testGolden(t, buf)
+	})
+}
+
+func TestNoColor(t *testing.T) {
+	os.Setenv("NO_COLOR", "1")
+	defer os.Setenv("NO_COLOR", "")
+
+	t.Run("vertices", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		writer := console.NewWriter(buf)
+
+		rec := progrock.NewRecorder(writer)
+
+		vtx := rec.Vertex("hey", "sup")
+		fmt.Fprintln(vtx.Stdout(), "hi stdout")
+		fmt.Fprintln(vtx.Stderr(), "hi stderr")
+		fmt.Fprintln(vtx.Stdout(), "hi again stdout")
+		vtx.Done(errors.New("oh no!"))
+
+		testGolden(t, buf)
+	})
+
+	t.Run("messages", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		writer := console.NewWriter(buf)
+		recorder := progrock.NewRecorder(writer)
+		recorder.Vertex("a", "some vertex").Done(nil)
+		recorder.Warn("uh oh")
 		testGolden(t, buf)
 	})
 }
