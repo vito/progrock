@@ -163,35 +163,48 @@ func (u *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 	// NOTE: establish color cache before we start consuming stdin
 	out := ui.NewOutput(os.Stderr, termenv.WithColorCache(true))
 
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return err
+	var ttyFd int
+	var oldState *term.State
+	var inR io.Reader
+	if tty, isTTY := findTTY(); isTTY {
+		ttyFd = int(tty.Fd())
+
+		var err error
+		oldState, err = term.MakeRaw(ttyFd)
+		if err != nil {
+			return err
+		}
+		defer term.Restore(ttyFd, oldState) // nolint: errcheck
+
+		var inW io.Writer
+		inR, inW = io.Pipe()
+
+		sw := &swappableWriter{original: inW}
+		tape.setZoomHook(func(st *zoomState) { // TODO weird tight coupling.
+			if st == nil {
+				sw.Restore()
+
+				// restore scrolling as we transition back to the DAG UI, since an app
+				// may have disabled it
+				out.EnableMouseCellMotion()
+			} else {
+				// disable mouse events, can't assume zoomed input wants it (might be
+				// regular shell like sh)
+				out.DisableMouseCellMotion()
+
+				sw.SetOverride(st.Input) // may be nil, same as Restore
+			}
+		})
+
+		go io.Copy(sw, tty) // nolint: errcheck
+	} else {
+		// no TTY found, so no input can be sent to the TUI
+		inR = nil
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	// DAG UI supports scrolling, since the only other option is to have it cut
 	// offscreen
 	out.EnableMouseCellMotion()
-
-	inR, inW := io.Pipe()
-
-	sw := &swappableWriter{original: inW}
-	tape.setZoomHook(func(st *zoomState) { // TODO weird tight coupling.
-		if st == nil {
-			sw.Restore()
-
-			// restore scrolling as we transition back to the DAG UI, since an app
-			// may have disabled it
-			out.EnableMouseCellMotion()
-		} else {
-			// disable mouse events, can't assume zoomed input wants it (might be
-			// regular shell like sh)
-			out.DisableMouseCellMotion()
-
-			sw.SetOverride(st.Input) // may be nil, same as Restore
-		}
-	})
-	go io.Copy(sw, os.Stdin)
 
 	model := u.newModel(ctx, tape, fn)
 
@@ -201,12 +214,24 @@ func (u *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 		return err
 	}
 
-	_ = term.Restore(int(os.Stdin.Fd()), oldState)
+	if oldState != nil {
+		_ = term.Restore(ttyFd, oldState)
+	}
 
 	model.Print(os.Stderr)
 	model.PrintTrailer(os.Stderr)
 
 	return model.err
+}
+
+func findTTY() (*os.File, bool) {
+	// some of these may be redirected
+	for _, f := range []*os.File{os.Stderr, os.Stdout, os.Stdin} {
+		if term.IsTerminal(int(f.Fd())) {
+			return f, true
+		}
+	}
+	return nil, false
 }
 
 func (u *UI) newModel(ctx context.Context, tape *Tape, run RunFunc) *Model {
