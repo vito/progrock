@@ -160,13 +160,15 @@ type UIClient interface {
 }
 
 func (u *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
+	tty, isTTY := findTTY()
+
 	// NOTE: establish color cache before we start consuming stdin
-	out := ui.NewOutput(os.Stderr, termenv.WithColorCache(true))
+	out := ui.NewOutput(tty, termenv.WithColorCache(true))
 
 	var ttyFd int
 	var oldState *term.State
 	var inR io.Reader
-	if tty, isTTY := findTTY(); isTTY {
+	if isTTY {
 		ttyFd = int(tty.Fd())
 
 		var err error
@@ -218,6 +220,9 @@ func (u *UI) Run(ctx context.Context, tape *Tape, fn RunFunc) error {
 		_ = term.Restore(ttyFd, oldState)
 	}
 
+	// for the final render, _always_ print to stderr so that it's possible to
+	// capture the output, otherwise it'll keep "dodging" the redirected fd. we
+	// just don't want to print a ton of escape sequences. while the TUI draws.
 	model.Print(os.Stderr)
 	model.PrintTrailer(os.Stderr)
 
