@@ -5,19 +5,22 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/muesli/termenv"
+	"github.com/vito/dagql/idproto"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock/ui"
-	"golang.org/x/exp/slices"
 )
 
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
 type Tape struct {
+	// render in v2-IDs mode
+	ids    bool
+	allIDs map[string]*idproto.ID
+
 	// order to display vertices
 	order []string
 
@@ -33,6 +36,9 @@ type Tape struct {
 	// vertex <-> group mappings
 	group2vertexes map[string]map[string]struct{}
 	vertex2groups  map[string]map[string]struct{}
+
+	// group children
+	group2groups map[string]map[string]struct{}
 
 	// vertex state
 	tasks map[string][]*VertexTask
@@ -123,6 +129,7 @@ func NewTape() *Tape {
 		groups:         make(map[string]*Group),
 		group2vertexes: make(map[string]map[string]struct{}),
 		vertex2groups:  make(map[string]map[string]struct{}),
+		group2groups:   make(map[string]map[string]struct{}),
 		tasks:          make(map[string][]*VertexTask),
 		logs:           make(map[string]*ui.Vterm),
 		zoomed:         make(map[string]*zoomState),
@@ -156,6 +163,14 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 
 	for _, g := range status.Groups {
 		tape.groups[g.Id] = g
+		if g.Parent != nil {
+			parents, found := tape.group2groups[g.GetParent()]
+			if !found {
+				parents = make(map[string]struct{})
+				tape.group2groups[g.GetParent()] = parents
+			}
+			parents[g.Id] = struct{}{}
+		}
 	}
 
 	for _, v := range status.Vertexes {
@@ -174,6 +189,21 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 			tape.initZoom(v)
 		} else if isZoomed {
 			tape.releaseZoom(v)
+		}
+	}
+
+	if tape.ids {
+		for _, v := range status.Metas {
+			var id idproto.ID
+			if err := v.Data.UnmarshalTo(&id); err != nil {
+				return fmt.Errorf("unmarshal payload: %w", err)
+			}
+			idp := id.Canonical() // TODO decide whether or not to do this
+			dig, err := idp.Digest()
+			if err != nil {
+				return fmt.Errorf("digest payload: %w", err)
+			}
+			tape.allIDs[dig.String()] = idp
 		}
 	}
 
@@ -537,6 +567,13 @@ func init() {
 	pulse.Frames = frames
 }
 
+func (tape *Tape) RenderIDs(ids bool) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.ids = ids
+	tape.allIDs = make(map[string]*idproto.ID)
+}
+
 func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
@@ -553,8 +590,10 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	var err error
 	if zoomSt != nil {
 		err = tape.renderZoomed(w, u, zoomSt)
+	} else if tape.ids {
+		err = RenderIDs(tape, w, u)
 	} else if tape.focus {
-		err = tape.renderTree(w, u)
+		err = RenderTree(tape, w, u)
 	} else {
 		err = tape.renderDAG(out, u)
 	}
@@ -699,156 +738,6 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 	}
 
 	groups.Reap(out, u, nil)
-
-	return nil
-}
-
-func (tape *Tape) renderTree(w io.Writer, u *UI) error {
-	b := tape.bouncer()
-
-	out := ui.NewOutput(w, termenv.WithProfile(tape.colorProfile))
-
-	var groups []*Group
-	for _, group := range b.groups {
-		groups = append(groups, group)
-	}
-	// TODO: (likely) stable order
-	sort.Slice(groups, func(i, j int) bool {
-		gi := groups[i]
-		gj := groups[j]
-		return gi.Started.AsTime().Before(gj.Started.AsTime())
-	})
-
-	renderVtx := func(vtx *Vertex, indent string) error {
-		var symbol string
-		var color termenv.Color
-		if vtx.Completed != nil {
-			if vtx.Error != nil {
-				symbol = iconFailure
-				color = termenv.ANSIRed
-			} else if vtx.Canceled {
-				symbol = iconSkipped
-				color = termenv.ANSIBrightBlack
-			} else {
-				symbol = iconSuccess
-				color = termenv.ANSIGreen
-			}
-		} else {
-			symbol, _, _ = u.Spinner.ViewFrame(ui.DotFrames)
-			color = termenv.ANSIYellow
-		}
-
-		symbol = out.String(symbol).Foreground(color).String()
-
-		fmt.Fprintf(w, "%s%s ", indent, symbol)
-
-		if err := u.RenderVertexTree(w, vtx); err != nil {
-			return err
-		}
-
-		// TODO dedup from renderGraph
-		if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
-			tasks := tape.tasks[vtx.Id]
-			for _, t := range tasks {
-				fmt.Fprint(w, indent, vrBar, " ")
-				if err := u.RenderTask(w, t); err != nil {
-					return err
-				}
-			}
-
-			term := tape.vertexLogs(vtx.Id)
-
-			if vtx.Error != nil {
-				term.SetHeight(term.UsedHeight())
-			} else {
-				term.SetHeight(tape.termHeight)
-			}
-
-			term.SetPrefix(indent + out.String(vbBar).Foreground(color).String() + " ")
-
-			if tape.closed {
-				term.SetHeight(term.UsedHeight())
-			}
-
-			if err := u.RenderTerm(w, term); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	// TODO: this ended up being super complicated after a lot of flailing and
-	// can probably be simplified. the goal is to render the groups depth-first,
-	// in a stable order. i tried harder and harder and it ended up being an
-	// unrelated mutation bug. -_-
-	rendered := map[string]struct{}{}
-	var render func(g *Group) error
-	render = func(g *Group) error {
-		if _, f := rendered[g.Id]; f {
-			return nil
-		} else {
-			rendered[g.Id] = struct{}{}
-		}
-
-		defer func() {
-			for _, sub := range groups {
-				if sub.Parent != nil && *sub.Parent == g.Id {
-					render(sub)
-				}
-			}
-		}()
-
-		vs := b.VisibleVertices(g)
-		if len(vs) == 0 {
-			return nil
-		}
-
-		sort.Slice(vs, func(i, j int) bool {
-			return slices.Index(tape.order, vs[i].Id) < slices.Index(tape.order, vs[j].Id)
-		})
-
-		depth := b.VisibleDepth(g) - 1
-		if depth < 0 {
-			depth = 0
-		}
-		indent := strings.Repeat("  ", depth)
-
-		if g.Name != RootGroup {
-			var names []string
-			for _, ancestor := range b.HiddenAncestors(g) {
-				if ancestor.Name == RootGroup {
-					continue
-				}
-
-				names = append(names, ancestor.Name)
-			}
-			names = append(names, g.Name)
-			groupPath := strings.Join(names, " "+rCaret+" ")
-			fmt.Fprintf(w, "%s%s %s\n", indent, rCaret, out.String(groupPath).Bold())
-			indent += "  "
-		}
-
-		for _, vtx := range vs {
-			if err := renderVtx(vtx, indent); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	for _, v := range b.VisibleVertices(nil) {
-		if err := renderVtx(v, ""); err != nil {
-			return err
-		}
-	}
-
-	for _, g := range groups {
-		if err := render(g); err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
