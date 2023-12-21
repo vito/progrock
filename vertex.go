@@ -10,6 +10,7 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -138,6 +139,18 @@ func (recorder *VertexRecorder) Stderr() io.Writer {
 		Stream:         LogStream_STDERR,
 		VertexRecorder: recorder,
 	}
+}
+
+func (recorder *VertexRecorder) Meta(name string, payload *anypb.Any) {
+	recorder.Recorder.Record(&StatusUpdate{
+		Metas: []*VertexMeta{
+			{
+				Vertex: recorder.Vertex.Id,
+				Name:   name,
+				Data:   payload,
+			},
+		},
+	})
 }
 
 // Complete marks the vertex as completed and sends an update.

@@ -121,7 +121,7 @@ func (u *UI) RenderStatus(w io.Writer, tape *Tape, infos []StatusInfo) error {
 		Infos        []StatusInfo
 	}{
 		Spinner:      spinner,
-		VertexSymbol: block,
+		VertexSymbol: ui.Block,
 		Tape:         tape,
 		Infos:        infos,
 	})

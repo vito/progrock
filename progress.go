@@ -34,14 +34,14 @@ func (v *Vertex) HasInput(o *Vertex) bool {
 }
 
 func (vertex *Vertex) Duration() time.Duration {
-	return dt(vertex.Started, vertex.Completed)
+	return Duration(vertex.Started, vertex.Completed)
 }
 
 func (task *VertexTask) Duration() time.Duration {
-	return dt(task.Started, task.Completed)
+	return Duration(task.Started, task.Completed)
 }
 
-func dt(started, completed *timestamppb.Timestamp) time.Duration {
+func Duration(started, completed *timestamppb.Timestamp) time.Duration {
 	if started == nil {
 		return 0
 	}

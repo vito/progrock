@@ -5,21 +5,35 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock/ui"
-	"golang.org/x/exp/slices"
 )
+
+type Frontend interface {
+	Writer
+	Render(*Tape, io.Writer, *UI) error
+}
 
 // Tape is a Writer that collects all progress output for displaying in a
 // terminal UI.
+//
+// The Tape has a configurable Frontend which is called with a lock held such
+// that it is safe to access all exposed fields of the Tape. Otherwise it is
+// not generally safe to access its exported fields. This is a conscious
+// trade-off to avoid too much lock contention in the fast path.
 type Tape struct {
-	// order to display vertices
-	order []string
+	// a configurable frontend
+	frontend Frontend
+
+	// ChronologicalVertexIDs lists the vertex IDs in the order that they were
+	// most recently active, with the most recently active last. This is an order
+	// suitable for displaying to the user in the terminal, where they will
+	// naturally be watching the bottom of the screen.
+	ChronologicalVertexIDs []string
 
 	// zoomed vertices
 	zoomed   map[string]*zoomState
@@ -27,39 +41,42 @@ type Tape struct {
 	zoomHook func(*zoomState)
 
 	// raw vertex/group state from the event stream
-	vertexes map[string]*Vertex
-	groups   map[string]*Group
+	Vertices map[string]*Vertex
+	Groups   map[string]*Group
 
 	// vertex <-> group mappings
-	group2vertexes map[string]map[string]struct{}
-	vertex2groups  map[string]map[string]struct{}
+	GroupVertices map[string]map[string]struct{}
+	VertexGroups  map[string]map[string]struct{}
+
+	// group children
+	GroupChildren map[string]map[string]struct{}
 
 	// vertex state
-	tasks map[string][]*VertexTask
-	logs  map[string]*ui.Vterm
+	VertexTasks map[string][]*VertexTask
+	vertexLogs  map[string]*ui.Vterm
 
-	// whether and when the tape has been closed
-	closed   bool
-	closedAt time.Time
+	// whether and when the tape has been IsClosed
+	IsClosed bool
+	ClosedAt time.Time
 
 	// the time that tape was created and closed
-	createdAt time.Time
+	CreatedAt time.Time
 
 	// color profile loaded from the env when the tape was constructed
-	colorProfile termenv.Profile
+	ColorProfile termenv.Profile
 
-	// screen width and height
-	width, height int
+	// screen Width and Height
+	Width, Height int
 
 	// visible region for active vterms
-	termHeight int
+	ReasonableTermHeight int
 
 	// UI config
-	verboseEdges  bool // show edges between vertexes in the same group
-	showInternal  bool // show internal vertexes
-	revealErrored bool // show errored vertexes no matter what
-	showAllOutput bool // show output even for completed vertexes
-	focus         bool // only show 'focused' vertex output, condensing the rest
+	IsFocused                           bool // only show 'focused' vertex output, condensing the rest
+	ShowInternalVertices                bool // show internal vertexes
+	RevealErroredVertices               bool // show errored vertexes no matter what
+	ShowCompletedLogs                   bool // show output even for completed vertexes
+	ShowEdgesBetweenVerticesInSameGroup bool // show edges between vertexes in the same group
 
 	// output from messages and internal debugging
 	globalLogs  *ui.Vterm
@@ -76,42 +93,6 @@ type zoomState struct {
 	Output *midterm.Terminal
 }
 
-const (
-	block       = "█"
-	dot         = "●"
-	emptyDot    = "○"
-	vBar        = "│"
-	vbBar       = "┃"
-	hBar        = "─"
-	hdlBar      = "╴"
-	hdrBar      = "╶"
-	tBar        = "┼"
-	dBar        = "┊" // ┊┆┇┋╎
-	blCorner    = "╰"
-	tlCorner    = "╭"
-	trCorner    = "╮"
-	brCorner    = "╯"
-	vlBar       = "┤"
-	vrBar       = "├"
-	vlbBar      = "┫"
-	vrbBar      = "┣"
-	htBar       = "┴"
-	htbBar      = "┻"
-	hbBar       = "┬"
-	lCaret      = "◀" //"<"
-	rCaret      = "▶" //">"
-	rEmptyCaret = "▷" //">"
-	dCaret      = "▼"
-	dEmptyCaret = "▽"
-
-	taskSymbol          = vrbBar
-	inactiveGroupSymbol = vBar
-
-	iconSkipped = "∅"
-	iconSuccess = "✔"
-	iconFailure = "✘"
-)
-
 // NewTape returns a new Tape.
 func NewTape() *Tape {
 	colorProfile := ui.ColorProfile()
@@ -119,30 +100,31 @@ func NewTape() *Tape {
 	logs := ui.NewVterm()
 
 	return &Tape{
-		vertexes:       make(map[string]*Vertex),
-		groups:         make(map[string]*Group),
-		group2vertexes: make(map[string]map[string]struct{}),
-		vertex2groups:  make(map[string]map[string]struct{}),
-		tasks:          make(map[string][]*VertexTask),
-		logs:           make(map[string]*ui.Vterm),
-		zoomed:         make(map[string]*zoomState),
+		Vertices:      make(map[string]*Vertex),
+		Groups:        make(map[string]*Group),
+		GroupVertices: make(map[string]map[string]struct{}),
+		VertexGroups:  make(map[string]map[string]struct{}),
+		GroupChildren: make(map[string]map[string]struct{}),
+		VertexTasks:   make(map[string][]*VertexTask),
+		vertexLogs:    make(map[string]*ui.Vterm),
+		zoomed:        make(map[string]*zoomState),
 
 		// default to unbounded screen size so we don't arbitrarily wrap log output
 		// when no size is given
-		width:  -1,
-		height: -1,
+		Width:  -1,
+		Height: -1,
 
-		colorProfile: colorProfile,
+		ColorProfile: colorProfile,
 
 		// sane default before window size is known
-		termHeight: 10,
+		ReasonableTermHeight: 10,
 
 		globalLogs:  logs,
 		globalLogsW: ui.NewOutput(logs, termenv.WithProfile(colorProfile)),
 
 		messageLevel: MessageLevel_WARNING,
 
-		createdAt: time.Now(),
+		CreatedAt: time.Now(),
 	}
 }
 
@@ -155,18 +137,26 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	defer tape.l.Unlock()
 
 	for _, g := range status.Groups {
-		tape.groups[g.Id] = g
+		tape.Groups[g.Id] = g
+		if g.Parent != nil {
+			parents, found := tape.GroupChildren[g.GetParent()]
+			if !found {
+				parents = make(map[string]struct{})
+				tape.GroupChildren[g.GetParent()] = parents
+			}
+			parents[g.Id] = struct{}{}
+		}
 	}
 
 	for _, v := range status.Vertexes {
-		existing, found := tape.vertexes[v.Id]
+		existing, found := tape.Vertices[v.Id]
 		if !found {
 			tape.insert(v.Id, v)
 		} else if existing.Completed != nil && v.Cached {
 			// don't clobber the "real" vertex with a cache
 			// TODO: count cache hits?
 		} else {
-			tape.vertexes[v.Id] = v
+			tape.Vertices[v.Id] = v
 		}
 
 		_, isZoomed := tape.zoomed[v.Id]
@@ -186,7 +176,7 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		if t, found := tape.zoomed[l.Vertex]; found {
 			w = t.Output
 		} else {
-			w = tape.vertexLogs(l.Vertex)
+			w = tape.VertexLogs(l.Vertex)
 		}
 		_, err := w.Write(l.Data)
 		if err != nil {
@@ -195,17 +185,17 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 	}
 
 	for _, ms := range status.Memberships {
-		members, found := tape.group2vertexes[ms.Group]
+		members, found := tape.GroupVertices[ms.Group]
 		if !found {
 			members = make(map[string]struct{})
-			tape.group2vertexes[ms.Group] = members
+			tape.GroupVertices[ms.Group] = members
 		}
 
 		for _, vtxId := range ms.Vertexes {
-			groups, found := tape.vertex2groups[vtxId]
+			groups, found := tape.VertexGroups[vtxId]
 			if !found {
 				groups = make(map[string]struct{})
-				tape.vertex2groups[vtxId] = groups
+				tape.VertexGroups[vtxId] = groups
 			}
 
 			if len(groups) == 0 {
@@ -220,15 +210,21 @@ func (tape *Tape) WriteStatus(status *StatusUpdate) error {
 		tape.log(msg)
 	}
 
+	if tape.frontend != nil {
+		if err := tape.frontend.WriteStatus(status); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (tape *Tape) initZoom(v *Vertex) {
 	var vt *midterm.Terminal
-	if tape.height == -1 || tape.width == -1 {
+	if tape.Height == -1 || tape.Width == -1 {
 		vt = midterm.NewAutoResizingTerminal()
 	} else {
-		vt = midterm.NewTerminal(tape.height, tape.width)
+		vt = midterm.NewTerminal(tape.Height, tape.Width)
 	}
 	w := setupTerm(v.Id, vt)
 	tape.zoomed[v.Id] = &zoomState{
@@ -242,7 +238,7 @@ func (tape *Tape) releaseZoom(vtx *Vertex) {
 }
 
 func (tape *Tape) recordTask(t *VertexTask) {
-	tasks := tape.tasks[t.Vertex]
+	tasks := tape.VertexTasks[t.Vertex]
 	var updated bool
 	for i, task := range tasks {
 		if task.Name == t.Name {
@@ -252,7 +248,7 @@ func (tape *Tape) recordTask(t *VertexTask) {
 	}
 	if !updated {
 		tasks = append(tasks, t)
-		tape.tasks[t.Vertex] = tasks
+		tape.VertexTasks[t.Vertex] = tasks
 	}
 }
 
@@ -287,13 +283,13 @@ func WriteMessage(out *termenv.Output, msg *Message) error {
 	return err
 }
 
-func (tape *Tape) Vertices() []*Vertex {
+func (tape *Tape) AllVertices() []*Vertex {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
 	var vertices []*Vertex
-	for _, vid := range tape.order {
-		vtx, found := tape.vertexes[vid]
+	for _, vid := range tape.ChronologicalVertexIDs {
+		vtx, found := tape.Vertices[vid]
 		if !found {
 			// should be impossible
 			continue
@@ -309,9 +305,9 @@ func (tape *Tape) RunningVertex() *Vertex {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
-	for i := len(tape.order) - 1; i >= 0; i-- {
-		vid := tape.order[i]
-		vtx := tape.vertexes[vid]
+	for i := len(tape.ChronologicalVertexIDs) - 1; i >= 0; i-- {
+		vid := tape.ChronologicalVertexIDs[i]
+		vtx := tape.Vertices[vid]
 		if vtx.Started != nil && vtx.Completed == nil {
 			return vtx
 		}
@@ -333,12 +329,12 @@ func (tape *Tape) Activity(vtx *Vertex) VertexActivity {
 
 	var activity VertexActivity
 
-	term := tape.logs[vtx.Id]
+	term := tape.vertexLogs[vtx.Id]
 	if term != nil {
 		activity.LastLine = term.LastLine()
 	}
 
-	tasks := tape.tasks[vtx.Id]
+	tasks := tape.VertexTasks[vtx.Id]
 	for _, task := range tasks {
 		activity.TasksTotal++
 
@@ -361,7 +357,7 @@ func (tape *Tape) CompletedCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	var completed int
-	for _, v := range tape.vertexes {
+	for _, v := range tape.Vertices {
 		if v.Completed != nil {
 			completed++
 		}
@@ -375,7 +371,7 @@ func (tape *Tape) RunningCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	var running int
-	for _, v := range tape.vertexes {
+	for _, v := range tape.Vertices {
 		if v.Started != nil && v.Completed == nil {
 			running++
 		}
@@ -389,7 +385,7 @@ func (tape *Tape) UncachedCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	var uncached int
-	for _, v := range tape.vertexes {
+	for _, v := range tape.Vertices {
 		if v.Completed != nil && !v.Cached {
 			uncached++
 		}
@@ -403,7 +399,7 @@ func (tape *Tape) CachedCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	var cached int
-	for _, v := range tape.vertexes {
+	for _, v := range tape.Vertices {
 		if v.Cached {
 			cached++
 		}
@@ -417,7 +413,7 @@ func (tape *Tape) ErroredCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 	var errored int
-	for _, v := range tape.vertexes {
+	for _, v := range tape.Vertices {
 		if v.Error != nil {
 			errored++
 		}
@@ -429,7 +425,7 @@ func (tape *Tape) ErroredCount() int {
 func (tape *Tape) TotalCount() int {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	return len(tape.vertexes)
+	return len(tape.Vertices)
 }
 
 // Duration returns the duration that the Tape has been accepting updates until
@@ -437,19 +433,22 @@ func (tape *Tape) TotalCount() int {
 func (tape *Tape) Duration() time.Duration {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	if tape.closed {
-		return tape.closedAt.Sub(tape.createdAt)
+	if tape.IsClosed {
+		return tape.ClosedAt.Sub(tape.CreatedAt)
 	}
-	return time.Since(tape.createdAt)
+	return time.Since(tape.CreatedAt)
 }
 
 // Close marks the Tape as done, which tells it to display all vertex output
 // for the final render.
 func (tape *Tape) Close() error {
 	tape.l.Lock()
-	tape.closed = true
-	tape.closedAt = time.Now()
-	tape.l.Unlock()
+	defer tape.l.Unlock()
+	tape.IsClosed = true
+	tape.ClosedAt = time.Now()
+	if tape.frontend != nil {
+		return tape.frontend.Close()
+	}
 	return nil
 }
 
@@ -457,7 +456,14 @@ func (tape *Tape) Close() error {
 func (tape *Tape) Closed() bool {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	return tape.closed
+	return tape.IsClosed
+}
+
+// SetFrontend configures a custom frontend for the Tape to display.
+func (tape *Tape) SetFrontend(f Frontend) {
+	tape.l.Lock()
+	defer tape.l.Unlock()
+	tape.frontend = f
 }
 
 // VerboseEdges sets whether to display edges between vertexes in the same
@@ -465,14 +471,14 @@ func (tape *Tape) Closed() bool {
 func (tape *Tape) VerboseEdges(verbose bool) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	tape.verboseEdges = verbose
+	tape.ShowEdgesBetweenVerticesInSameGroup = verbose
 }
 
 // ShowInternal sets whether to show internal vertexes in the output.
 func (tape *Tape) ShowInternal(show bool) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	tape.showInternal = show
+	tape.ShowInternalVertices = show
 }
 
 // RevealErrored sets whether to show errored vertexes even when they would
@@ -482,21 +488,21 @@ func (tape *Tape) ShowInternal(show bool) {
 func (tape *Tape) RevealErrored(reveal bool) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	tape.revealErrored = reveal
+	tape.RevealErroredVertices = reveal
 }
 
 // ShowAllOutput sets whether to show output even for successful vertexes.
 func (tape *Tape) ShowAllOutput(show bool) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	tape.showAllOutput = show
+	tape.ShowCompletedLogs = show
 }
 
 // Focus sets whether to hide output of non-focused vertexes.
 func (tape *Tape) Focus(focused bool) {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	tape.focus = focused
+	tape.IsFocused = focused
 }
 
 // MessageLevel sets the minimum level for messages to display.
@@ -510,10 +516,10 @@ func (tape *Tape) MessageLevel(level MessageLevel) {
 // dimensions for vertex logs, progress bars, etc.
 func (tape *Tape) SetWindowSize(w, h int) {
 	tape.l.Lock()
-	tape.width = w
-	tape.height = h
-	tape.termHeight = h / 4
-	for _, l := range tape.logs {
+	tape.Width = w
+	tape.Height = h
+	tape.ReasonableTermHeight = h / 4
+	for _, l := range tape.vertexLogs {
 		l.SetWidth(w)
 	}
 	for _, t := range tape.zoomed {
@@ -541,7 +547,7 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
 
-	out := ui.NewOutput(w, termenv.WithProfile(tape.colorProfile))
+	out := ui.NewOutput(w, termenv.WithProfile(tape.ColorProfile))
 
 	zoomSt := tape.currentZoom()
 
@@ -553,8 +559,10 @@ func (tape *Tape) Render(w io.Writer, u *UI) error {
 	var err error
 	if zoomSt != nil {
 		err = tape.renderZoomed(w, u, zoomSt)
-	} else if tape.focus {
-		err = tape.renderTree(w, u)
+	} else if tape.frontend != nil {
+		err = tape.frontend.Render(tape, w, u)
+	} else if tape.IsFocused {
+		err = RenderTree(tape, w, u)
 	} else {
 		err = tape.renderDAG(out, u)
 	}
@@ -572,7 +580,7 @@ func (tape *Tape) currentZoom() *zoomState {
 	var firstZoomed *Vertex
 	var firstState *zoomState
 	for vId, st := range tape.zoomed {
-		v, found := tape.vertexes[vId]
+		v, found := tape.Vertices[vId]
 		if !found {
 			// should be impossible
 			continue
@@ -602,8 +610,8 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 	var completed []*Vertex
 	var runningAndFailed []*Vertex
 
-	for _, dig := range tape.order {
-		vtx := tape.vertexes[dig]
+	for _, dig := range tape.ChronologicalVertexIDs {
+		vtx := tape.Vertices[dig]
 
 		if vtx.Completed == nil || vtx.Error != nil {
 			runningAndFailed = append(runningAndFailed, vtx)
@@ -632,7 +640,7 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 			continue
 		}
 
-		symbol := block
+		symbol := ui.Block
 		if vtx.Completed == nil {
 			symbol, _, _ = u.Spinner.ViewFrame(pulse)
 		}
@@ -642,7 +650,7 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 			return err
 		}
 
-		tasks := tape.tasks[vtx.Id]
+		tasks := tape.VertexTasks[vtx.Id]
 		for _, t := range tasks {
 			groups.TaskPrefix(out, u, vtx)
 			if err := u.RenderTask(out, t); err != nil {
@@ -654,7 +662,7 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 
 		var haveInput []*Vertex
 		for _, a := range activeExceptCurrent {
-			if a.HasInput(vtx) && (!b.IsSibling(a, vtx) || tape.verboseEdges) {
+			if a.HasInput(vtx) && (!b.IsSibling(a, vtx) || tape.ShowEdgesBetweenVerticesInSameGroup) {
 				// avoid forking for vertexes in the same group; often more noisy than helpful
 				haveInput = append(haveInput, a)
 			}
@@ -669,26 +677,26 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 		}
 
 		if len(haveInput) > 0 {
-			groups = groups.AddVertex(out, u, tape.groups, vtx, haveInput)
+			groups = groups.AddVertex(out, u, tape.Groups, vtx, haveInput)
 		}
 
-		if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
-			term := tape.vertexLogs(vtx.Id)
+		if tape.IsClosed || tape.ShowCompletedLogs || vtx.Completed == nil || vtx.Error != nil {
+			term := tape.VertexLogs(vtx.Id)
 
 			if vtx.Error != nil {
 				term.SetHeight(term.UsedHeight())
 			} else {
-				term.SetHeight(tape.termHeight)
+				term.SetHeight(tape.ReasonableTermHeight)
 			}
 
-			if !tape.focus {
+			if !tape.IsFocused {
 				buf := new(bytes.Buffer)
 				prefixOut := ui.NewOutput(buf, termenv.WithProfile(out.Profile))
 				groups.TermPrefix(prefixOut, u, vtx)
 				term.SetPrefix(buf.String())
 			}
 
-			if tape.closed {
+			if tape.IsClosed {
 				term.SetHeight(term.UsedHeight())
 			}
 
@@ -703,176 +711,26 @@ func (tape *Tape) renderDAG(out *termenv.Output, u *UI) error {
 	return nil
 }
 
-func (tape *Tape) renderTree(w io.Writer, u *UI) error {
-	b := tape.bouncer()
-
-	out := ui.NewOutput(w, termenv.WithProfile(tape.colorProfile))
-
-	var groups []*Group
-	for _, group := range b.groups {
-		groups = append(groups, group)
-	}
-	// TODO: (likely) stable order
-	sort.Slice(groups, func(i, j int) bool {
-		gi := groups[i]
-		gj := groups[j]
-		return gi.Started.AsTime().Before(gj.Started.AsTime())
-	})
-
-	renderVtx := func(vtx *Vertex, indent string) error {
-		var symbol string
-		var color termenv.Color
-		if vtx.Completed != nil {
-			if vtx.Error != nil {
-				symbol = iconFailure
-				color = termenv.ANSIRed
-			} else if vtx.Canceled {
-				symbol = iconSkipped
-				color = termenv.ANSIBrightBlack
-			} else {
-				symbol = iconSuccess
-				color = termenv.ANSIGreen
-			}
-		} else {
-			symbol, _, _ = u.Spinner.ViewFrame(ui.DotFrames)
-			color = termenv.ANSIYellow
-		}
-
-		symbol = out.String(symbol).Foreground(color).String()
-
-		fmt.Fprintf(w, "%s%s ", indent, symbol)
-
-		if err := u.RenderVertexTree(w, vtx); err != nil {
-			return err
-		}
-
-		// TODO dedup from renderGraph
-		if tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil {
-			tasks := tape.tasks[vtx.Id]
-			for _, t := range tasks {
-				fmt.Fprint(w, indent, vrBar, " ")
-				if err := u.RenderTask(w, t); err != nil {
-					return err
-				}
-			}
-
-			term := tape.vertexLogs(vtx.Id)
-
-			if vtx.Error != nil {
-				term.SetHeight(term.UsedHeight())
-			} else {
-				term.SetHeight(tape.termHeight)
-			}
-
-			term.SetPrefix(indent + out.String(vbBar).Foreground(color).String() + " ")
-
-			if tape.closed {
-				term.SetHeight(term.UsedHeight())
-			}
-
-			if err := u.RenderTerm(w, term); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	// TODO: this ended up being super complicated after a lot of flailing and
-	// can probably be simplified. the goal is to render the groups depth-first,
-	// in a stable order. i tried harder and harder and it ended up being an
-	// unrelated mutation bug. -_-
-	rendered := map[string]struct{}{}
-	var render func(g *Group) error
-	render = func(g *Group) error {
-		if _, f := rendered[g.Id]; f {
-			return nil
-		} else {
-			rendered[g.Id] = struct{}{}
-		}
-
-		defer func() {
-			for _, sub := range groups {
-				if sub.Parent != nil && *sub.Parent == g.Id {
-					render(sub)
-				}
-			}
-		}()
-
-		vs := b.VisibleVertices(g)
-		if len(vs) == 0 {
-			return nil
-		}
-
-		sort.Slice(vs, func(i, j int) bool {
-			return slices.Index(tape.order, vs[i].Id) < slices.Index(tape.order, vs[j].Id)
-		})
-
-		depth := b.VisibleDepth(g) - 1
-		if depth < 0 {
-			depth = 0
-		}
-		indent := strings.Repeat("  ", depth)
-
-		if g.Name != RootGroup {
-			var names []string
-			for _, ancestor := range b.HiddenAncestors(g) {
-				if ancestor.Name == RootGroup {
-					continue
-				}
-
-				names = append(names, ancestor.Name)
-			}
-			names = append(names, g.Name)
-			groupPath := strings.Join(names, " "+rCaret+" ")
-			fmt.Fprintf(w, "%s%s %s\n", indent, rCaret, out.String(groupPath).Bold())
-			indent += "  "
-		}
-
-		for _, vtx := range vs {
-			if err := renderVtx(vtx, indent); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	for _, v := range b.VisibleVertices(nil) {
-		if err := renderVtx(v, ""); err != nil {
-			return err
-		}
-	}
-
-	for _, g := range groups {
-		if err := render(g); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (tape *Tape) bouncer() *bouncer {
 	return &bouncer{
-		order:          tape.order,
-		groups:         tape.groups,
-		group2vertexes: tape.group2vertexes,
+		order:          tape.ChronologicalVertexIDs,
+		groups:         tape.Groups,
+		group2vertexes: tape.GroupVertices,
 
-		vertices:      tape.vertexes,
-		vertex2groups: tape.vertex2groups,
+		vertices:      tape.Vertices,
+		vertex2groups: tape.VertexGroups,
 
-		focus:         tape.focus,
-		showInternal:  tape.showInternal,
-		revealErrored: tape.revealErrored,
+		focus:         tape.IsFocused,
+		showInternal:  tape.ShowInternalVertices,
+		revealErrored: tape.RevealErroredVertices,
 	}
 }
 
 func (tape *Tape) EachVertex(f func(*Vertex, *ui.Vterm) error) error {
 	tape.l.Lock()
 	defer tape.l.Unlock()
-	for _, vtx := range tape.vertexes {
-		if err := f(vtx, tape.vertexLogs(vtx.Id)); err != nil {
+	for _, vtx := range tape.Vertices {
+		if err := f(vtx, tape.VertexLogs(vtx.Id)); err != nil {
 			return err
 		}
 	}
@@ -891,31 +749,31 @@ func (tape *Tape) insert(id string, vtx *Vertex) {
 		return
 	}
 
-	tape.vertexes[id] = vtx
+	tape.Vertices[id] = vtx
 
-	for i, dig := range tape.order {
-		other := tape.vertexes[dig]
+	for i, dig := range tape.ChronologicalVertexIDs {
+		other := tape.Vertices[dig]
 		if other.Started.AsTime().After(vtx.Started.AsTime()) {
-			inserted := make([]string, len(tape.order)+1)
-			copy(inserted, tape.order[:i])
+			inserted := make([]string, len(tape.ChronologicalVertexIDs)+1)
+			copy(inserted, tape.ChronologicalVertexIDs[:i])
 			inserted[i] = id
-			copy(inserted[i+1:], tape.order[i:])
-			tape.order = inserted
+			copy(inserted[i+1:], tape.ChronologicalVertexIDs[i:])
+			tape.ChronologicalVertexIDs = inserted
 			return
 		}
 	}
 
-	tape.order = append(tape.order, id)
+	tape.ChronologicalVertexIDs = append(tape.ChronologicalVertexIDs, id)
 }
 
-func (tape *Tape) vertexLogs(vertex string) *ui.Vterm {
-	term, found := tape.logs[vertex]
+func (tape *Tape) VertexLogs(vertex string) *ui.Vterm {
+	term, found := tape.vertexLogs[vertex]
 	if !found {
 		term = ui.NewVterm()
-		if tape.width != -1 {
-			term.SetWidth(tape.width)
+		if tape.Width != -1 {
+			term.SetWidth(tape.Width)
 		}
-		tape.logs[vertex] = term
+		tape.vertexLogs[vertex] = term
 	}
 
 	return term
@@ -1249,38 +1107,38 @@ func (groups progressGroups) AddGroup(out *termenv.Output, u *UI, b *bouncer, gr
 	for i, g := range groups {
 		if i == parentIdx && addedIdx > parentIdx {
 			// line towards the right of the parent
-			fmt.Fprint(out, groupColor(out, parentIdx, vrbBar))
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, parentIdx, ui.VertRightBoldBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if i == parentIdx && addedIdx < parentIdx {
 			// line towards the left of the parent
-			fmt.Fprint(out, groupColor(out, parentIdx, vlbBar))
+			fmt.Fprint(out, groupColor(out, parentIdx, ui.VertLeftBoldBar))
 			fmt.Fprint(out, " ")
 		} else if i == addedIdx && addedIdx > parentIdx {
 			// line left from parent and down to added line
-			fmt.Fprint(out, groupColor(out, addedIdx, trCorner))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.CornerTopRight))
 			fmt.Fprint(out, " ")
 		} else if i == addedIdx && addedIdx < parentIdx {
 			// line up from added line and right to parent
-			fmt.Fprint(out, groupColor(out, addedIdx, tlCorner))
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.CornerTopLeft))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(out, groupColor(out, i, tBar))
+				fmt.Fprint(out, groupColor(out, i, ui.CrossBar))
 			} else {
-				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 			}
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(out, groupColor(out, i, tBar))
+				fmt.Fprint(out, groupColor(out, i, ui.CrossBar))
 			} else {
-				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 			}
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if groups[i] != nil {
-			fmt.Fprint(out, groupColor(out, i, inactiveGroupSymbol))
+			fmt.Fprint(out, groupColor(out, i, ui.InactiveGroupSymbol))
 			fmt.Fprint(out, " ")
 		} else {
 			fmt.Fprint(out, "  ")
@@ -1336,41 +1194,41 @@ func (groups progressGroups) AddVertex(out *termenv.Output, u *UI, allGroups map
 	for i, g := range groups {
 		if i == parentIdx && addedIdx > parentIdx {
 			// line towards the right of the parent
-			fmt.Fprint(out, groupColor(out, parentIdx, vrbBar))
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, parentIdx, ui.VertRightBoldBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if i == parentIdx && addedIdx < parentIdx {
 			// line towards the left of the parent
-			fmt.Fprint(out, groupColor(out, parentIdx, vlbBar))
+			fmt.Fprint(out, groupColor(out, parentIdx, ui.VertLeftBoldBar))
 			fmt.Fprint(out, " ")
 		} else if parentIdx != -1 && i == addedIdx && addedIdx > parentIdx {
 			// line left from parent and down to added line
-			fmt.Fprint(out, groupColor(out, addedIdx, trCorner))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.CornerTopRight))
 			fmt.Fprint(out, " ")
 		} else if parentIdx != -1 && i == addedIdx && addedIdx < parentIdx {
 			// line up from added line and right to parent
-			fmt.Fprint(out, groupColor(out, addedIdx, tlCorner))
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.CornerTopLeft))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if parentIdx != -1 && addedIdx > parentIdx && i > parentIdx && i < addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(out, groupColor(out, i, tBar))
+				fmt.Fprint(out, groupColor(out, i, ui.CrossBar))
 			} else {
-				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 			}
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if parentIdx != -1 && addedIdx < parentIdx && i < parentIdx && i > addedIdx {
 			// line between parent and added line
 			if g != nil {
-				fmt.Fprint(out, groupColor(out, i, tBar))
+				fmt.Fprint(out, groupColor(out, i, ui.CrossBar))
 			} else {
-				fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+				fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 			}
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if parentIdx == -1 && i == addedIdx {
-			fmt.Fprint(out, groupColor(out, addedIdx, emptyDot)) // TODO pointless?
-			fmt.Fprint(out, groupColor(out, addedIdx, hBar))
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.DotEmpty)) // TODO pointless?
+			fmt.Fprint(out, groupColor(out, addedIdx, ui.HorizBar))
 		} else if groups[i] != nil {
-			fmt.Fprint(out, groupColor(out, i, inactiveGroupSymbol))
+			fmt.Fprint(out, groupColor(out, i, ui.InactiveGroupSymbol))
 			fmt.Fprint(out, " ")
 		} else {
 			fmt.Fprint(out, "  ")
@@ -1419,9 +1277,9 @@ func (groups progressGroups) VertexPrefix(out *termenv.Output, u *UI, vtx *Verte
 		var symbol string
 		if g == nil {
 			if firstParentIdx != -1 && i < vtxIdx && i >= firstParentIdx {
-				fmt.Fprint(out, groupColor(out, firstParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, firstParentIdx, ui.HorizBar))
 			} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
-				fmt.Fprint(out, groupColor(out, lastParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, ui.HorizBar))
 			} else {
 				fmt.Fprint(out, " ")
 			}
@@ -1432,29 +1290,29 @@ func (groups progressGroups) VertexPrefix(out *termenv.Output, u *UI, vtx *Verte
 			} else if g.Created(vtx) && i > vtxIdx {
 				if g.WitnessedAll() {
 					if i == lastParentIdx {
-						symbol = brCorner
+						symbol = ui.CornerBottomRight
 					} else {
-						symbol = htBar
+						symbol = ui.HorizTopBar
 					}
 				} else {
-					symbol = vlBar
+					symbol = ui.VertLeftBar
 				}
 			} else if g.Created(vtx) {
 				if g.WitnessedAll() {
 					if i == firstParentIdx {
-						symbol = blCorner
+						symbol = ui.CornerBottomLeft
 					} else {
-						symbol = htBar
+						symbol = ui.HorizTopBar
 					}
 				} else {
-					symbol = vrBar
+					symbol = ui.VertRightBar
 				}
 			} else if firstParentIdx != -1 && i >= firstParentIdx && i < vtxIdx {
-				symbol = tBar
+				symbol = ui.CrossBar
 			} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
-				symbol = tBar
+				symbol = ui.CrossBar
 			} else {
-				symbol = inactiveGroupSymbol
+				symbol = ui.InactiveGroupSymbol
 			}
 
 			// respect color of the group
@@ -1463,21 +1321,21 @@ func (groups progressGroups) VertexPrefix(out *termenv.Output, u *UI, vtx *Verte
 
 		if firstParentIdx != -1 && vtxIdx > firstParentIdx && i >= firstParentIdx && i < vtxIdx {
 			if i+1 == vtxIdx {
-				fmt.Fprint(out, groupColor(out, firstParentIdx, rCaret))
+				fmt.Fprint(out, groupColor(out, firstParentIdx, ui.CaretRightFilled))
 			} else {
-				fmt.Fprint(out, groupColor(out, firstParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, firstParentIdx, ui.HorizBar))
 			}
 		} else if firstParentIdx != -1 && vtxIdx < firstParentIdx && i >= vtxIdx && i < lastParentIdx {
 			if i == vtxIdx {
-				fmt.Fprint(out, groupColor(out, lastParentIdx, lCaret))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, ui.CaretLeftFilled))
 			} else {
-				fmt.Fprint(out, groupColor(out, lastParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, ui.HorizBar))
 			}
 		} else if firstParentIdx != -1 && i >= vtxIdx && i < lastParentIdx {
 			if i == vtxIdx {
-				fmt.Fprint(out, groupColor(out, lastParentIdx, lCaret))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, ui.CaretLeftFilled))
 			} else {
-				fmt.Fprint(out, groupColor(out, lastParentIdx, hBar))
+				fmt.Fprint(out, groupColor(out, lastParentIdx, ui.HorizBar))
 			}
 		} else {
 			fmt.Fprint(out, " ")
@@ -1489,9 +1347,9 @@ func (groups progressGroups) VertexPrefix(out *termenv.Output, u *UI, vtx *Verte
 func (groups progressGroups) TaskPrefix(out *termenv.Output, u *UI, vtx *Vertex) {
 	groups.printPrefix(out, func(g progressGroup, vtx *Vertex) string {
 		if g.DirectlyContains(vtx) {
-			return taskSymbol
+			return ui.TaskSymbol
 		}
-		return inactiveGroupSymbol
+		return ui.InactiveGroupSymbol
 	}, vtx)
 }
 
@@ -1500,12 +1358,12 @@ func (groups progressGroups) GroupName(out *termenv.Output, u *UI, group *Group)
 	groups.printPrefix(out, func(g progressGroup, _ *Vertex) string {
 		if g.ID() == group.Id {
 			if group.Weak {
-				return dEmptyCaret
+				return ui.CaretDownEmpty
 			} else {
-				return dCaret
+				return ui.CaretDownFilled
 			}
 		}
-		return inactiveGroupSymbol
+		return ui.InactiveGroupSymbol
 	}, nil)
 	if group.Weak {
 		fmt.Fprintln(out, group.Name)
@@ -1518,9 +1376,9 @@ func (groups progressGroups) GroupName(out *termenv.Output, u *UI, group *Group)
 func (groups progressGroups) TermPrefix(out *termenv.Output, u *UI, vtx *Vertex) {
 	groups.printPrefix(out, func(g progressGroup, vtx *Vertex) string {
 		if g.DirectlyContains(vtx) {
-			return vbBar
+			return ui.VertBoldBar
 		}
-		return inactiveGroupSymbol
+		return ui.InactiveGroupSymbol
 	}, vtx)
 }
 
@@ -1549,10 +1407,10 @@ func (groups progressGroups) Reap(out *termenv.Output, u *UI, active []*Vertex) 
 	if len(reaped) > 0 {
 		for i, g := range groups {
 			if g != nil {
-				fmt.Fprint(out, groupColor(out, i, inactiveGroupSymbol))
+				fmt.Fprint(out, groupColor(out, i, ui.InactiveGroupSymbol))
 				fmt.Fprint(out, " ")
 			} else if reaped[i] {
-				fmt.Fprint(out, groupColor(out, i, htbBar))
+				fmt.Fprint(out, groupColor(out, i, ui.HorizTopBoldBar))
 				fmt.Fprint(out, " ")
 			} else {
 				fmt.Fprint(out, "  ")

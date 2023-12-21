@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"container/ring"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -72,7 +72,7 @@ func (g *group) name(t *trace) string {
 	p := g.Parent
 	for p != nil {
 		if _, ok := seen[*p]; ok {
-			log.Println("!!! LOOP DETECTED", *p, seen)
+			slog.Error("warning: loop detected while printing group name", "groupID", *p)
 			break
 		}
 		seen[*p] = struct{}{}

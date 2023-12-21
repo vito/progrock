@@ -5,6 +5,7 @@ option go_package = "github.com/vito/progrock";
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
 
 // StatusUpdate contains a snapshot of state updates for the graph.
 message StatusUpdate {
@@ -14,6 +15,8 @@ message StatusUpdate {
   repeated VertexTask tasks = 2;
   // Logs contains the set of new log output.
   repeated VertexLog logs = 3;
+  // Metas contains a set of vertex metadata.
+  repeated VertexMeta metas = 9;
   // Groups contains a set of groups updates.
   repeated Group groups = 4;
   // Memberships contains a set of membership updates.
@@ -134,6 +137,18 @@ message VertexLog {
   bytes data = 3;
   // Timestamp is the time that the log message was emitted.
   google.protobuf.Timestamp timestamp = 4;
+}
+
+// VertexMeta is a message for associated arbitrary data with a vertex.
+//
+// This is primarily used to help UIs.
+message VertexMeta {
+  // Vertex is the ID of the vertex that the payload pertains to.
+  string vertex = 1;
+  // Name is a simple word that describes the payload.
+  string name = 2;
+  // Data is an optional payload of arbitrary data.
+  optional google.protobuf.Any data = 3;
 }
 
 // LogStream is the standard stream that a log message was emitted to.
