@@ -264,14 +264,16 @@ func renderID(tape *Tape, out *termenv.Output, u *UI, vtx *Vertex, id *idproto.I
 	depth++
 
 	for _, vtx := range children {
-		// if vtx != nil && (tape.closed || tape.showAllOutput || vtx.Completed == nil || vtx.Error != nil) {
+		if vtx.Completed != nil && vtx.Error == nil {
+			continue
+		}
+
 		indent()
 		renderStatus(out, u, vtx)
 		if err := u.RenderVertexTree(out, vtx); err != nil {
 			return err
 		}
 		renderVertexTasksAndLogs(out, u, tape, vtx, depth)
-		// }
 	}
 
 	return nil
@@ -390,6 +392,9 @@ func renderVertexTasksAndLogs(out *termenv.Output, u *UI, tape *Tape, vtx *Verte
 
 	tasks := tape.tasks[vtx.Id]
 	for _, t := range tasks {
+		if t.Completed != nil {
+			continue
+		}
 		indent()
 		fmt.Fprint(out, vrBar, " ")
 		if err := u.RenderTask(out, t); err != nil {
