@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/ring"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -67,8 +68,15 @@ type group struct {
 func (g *group) name(t *trace) string {
 	name := g.Name
 
+	seen := map[string]struct{}{}
 	p := g.Parent
 	for p != nil {
+		if _, ok := seen[*p]; ok {
+			log.Println("!!! LOOP DETECTED", *p, seen)
+			break
+		}
+		seen[*p] = struct{}{}
+
 		pg := t.groupsById[*p]
 		if pg.Name == progrock.RootGroup {
 			break
