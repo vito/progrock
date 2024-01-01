@@ -78,6 +78,79 @@ func RenderIDs(tape *Tape, w io.Writer, u *UI) error {
 	return nil
 }
 
+func DebugRenderID(out *termenv.Output, u *UI, id *idproto.ID, depth int) error {
+	if id.Parent != nil {
+		if err := DebugRenderID(out, u, id.Parent, depth); err != nil {
+			return err
+		}
+	}
+
+	indent := func() {
+		fmt.Fprintf(out, strings.Repeat("  ", depth))
+	}
+
+	indent()
+
+	fmt.Fprint(out, id.Field)
+
+	kwColor := termenv.ANSIBlue
+
+	if len(id.Args) > 0 {
+		fmt.Fprint(out, "(")
+		var needIndent bool
+		for _, arg := range id.Args {
+			if _, ok := arg.Value.ToInput().(*idproto.ID); ok {
+				needIndent = true
+				break
+			}
+		}
+		if needIndent {
+			fmt.Fprintln(out)
+			depth++
+			for _, arg := range id.Args {
+				indent()
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
+				val := arg.Value.GetValue()
+				switch x := val.(type) {
+				case *idproto.Literal_Id:
+					argVertexID, err := x.Id.Digest()
+					if err != nil {
+						return err
+					}
+					fmt.Fprintln(out, " "+x.Id.Type.ToAST().Name()+"@"+argVertexID.String()+"{")
+					depth++
+					if err := DebugRenderID(out, u, x.Id, depth); err != nil {
+						return err
+					}
+					depth--
+					indent()
+					fmt.Fprintln(out, "}")
+				default:
+					fmt.Fprint(out, " ")
+					renderLiteral(out, arg.Value)
+					fmt.Fprintln(out)
+				}
+			}
+			depth--
+			indent()
+		} else {
+			for i, arg := range id.Args {
+				if i > 0 {
+					fmt.Fprint(out, ", ")
+				}
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
+				renderLiteral(out, arg.Value)
+			}
+		}
+		fmt.Fprint(out, ")")
+	}
+
+	typeStr := out.String(": " + id.Type.ToAST().String()).Foreground(termenv.ANSIBrightBlack)
+	fmt.Fprintln(out, typeStr)
+
+	return nil
+}
+
 func renderID(tape *Tape, out *termenv.Output, u *UI, vtx *Vertex, id *idproto.ID, depth int) error {
 	if id.Parent != nil {
 		parentVtxID, err := id.Parent.Digest()
