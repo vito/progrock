@@ -287,7 +287,7 @@ type Model struct {
 	contentBuf *bytes.Buffer
 
 	// custom info to display, set by the UIClient
-	infos  []StatusInfo
+	_infos []StatusInfo
 	infosL sync.Mutex
 
 	// UI refresh rate
@@ -302,7 +302,7 @@ func (m *Model) Print(w io.Writer) {
 }
 
 func (m *Model) PrintTrailer(w io.Writer) {
-	if err := m.ui.RenderStatus(w, m.tape, m.infos); err != nil {
+	if err := m.ui.RenderStatus(w, m.tape, m.infos()); err != nil {
 		fmt.Fprintln(w, "failed to render trailer:", err)
 		return
 	}
@@ -405,7 +405,7 @@ type StatusInfo struct {
 func (m *Model) SetStatusInfo(info StatusInfo) {
 	m.infosL.Lock()
 	defer m.infosL.Unlock()
-	infos := append([]StatusInfo{}, m.infos...)
+	infos := append([]StatusInfo{}, m._infos...)
 	infos = append(infos, info)
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].Order == infos[j].Order {
@@ -413,7 +413,13 @@ func (m *Model) SetStatusInfo(info StatusInfo) {
 		}
 		return infos[i].Order < infos[j].Order
 	})
-	m.infos = infos
+	m._infos = infos
+}
+
+func (m *Model) infos() []StatusInfo {
+	m.infosL.Lock()
+	defer m.infosL.Unlock()
+	return append([]StatusInfo{}, m._infos...)
 }
 
 func (m *Model) render() {
@@ -449,7 +455,7 @@ func (m *Model) render() {
 
 func (m *Model) viewChrome() string {
 	m.chromeBuf.Reset()
-	m.ui.RenderStatus(m.chromeBuf, m.tape, m.infos)
+	m.ui.RenderStatus(m.chromeBuf, m.tape, m.infos())
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Bottom,
