@@ -120,10 +120,10 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 		}
 	}
 
-	if recorder.Parent != nil {
+	if recorder.Parent != "" {
 		update.Children = []*Children{
 			{
-				Vertex:   *recorder.Parent,
+				Vertex:   recorder.Parent,
 				Vertexes: []string{vtx.Id},
 			},
 		}

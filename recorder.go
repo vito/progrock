@@ -22,9 +22,8 @@ type Recorder struct {
 	// one.
 	Group *Group
 
-	// GroupID is either the newly created group's ID, or the group ID passed to
-	// NewGroupedRecorder.
-	Parent *string
+	// Parent is the parent vertex ID to associate with any emitted vertices.
+	Parent string
 
 	groups  map[string]*Recorder
 	groupsL *sync.Mutex
@@ -61,7 +60,7 @@ func NewRecorder(w Writer, opts ...GroupOpt) *Recorder {
 // already been emitted.
 func NewSubRecorder(w Writer, parentID string) *Recorder {
 	rec := newEmptyRecorder(w)
-	rec.Parent = &parentID
+	rec.Parent = parentID
 	return rec
 }
 
@@ -79,9 +78,6 @@ func (recorder *Recorder) Clone() *Recorder {
 	defer recorder.groupsL.Unlock()
 	cp := *recorder
 	cp.Group = proto.Clone(recorder.Group).(*Group)
-	if cp.Parent != nil {
-		cp.Parent = proto.String(*recorder.Parent)
-	}
 	cp.groups = map[string]*Recorder{}
 	for k, v := range recorder.groups {
 		cp.groups[k] = v.Clone()
@@ -93,7 +89,7 @@ func (recorder *Recorder) Clone() *Recorder {
 // Parent sets the parent vertex ID to associate with any emitted vertices.
 func (recorder *Recorder) WithParent(parentID string) *Recorder {
 	cp := recorder.Clone()
-	cp.Parent = &parentID
+	cp.Parent = parentID
 	return cp
 }
 
@@ -278,10 +274,10 @@ func (recorder *Recorder) Join(vertexes ...digest.Digest) {
 		}
 	}
 
-	if recorder.Parent != nil {
+	if recorder.Parent != "" {
 		update.Children = []*Children{
 			{
-				Vertex:   *recorder.Parent,
+				Vertex:   recorder.Parent,
 				Vertexes: strs,
 			},
 		}
