@@ -33,6 +33,10 @@ func NewVterm() *Vterm {
 	}
 }
 
+func (term *Vterm) Term() *midterm.Terminal {
+	return term.vt
+}
+
 func (term *Vterm) Write(p []byte) (int, error) {
 	atBottom := term.Offset+term.Height >= term.vt.UsedHeight()
 	if term.Height == 0 {
