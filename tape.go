@@ -100,31 +100,32 @@ func NewTape() *Tape {
 	logs := ui.NewVterm()
 
 	return &Tape{
-		Vertices:      make(map[string]*Vertex),
-		Groups:        make(map[string]*Group),
-		GroupVertices: make(map[string]map[string]struct{}),
-		VertexGroups:  make(map[string]map[string]struct{}),
-		GroupChildren: make(map[string]map[string]struct{}),
-		VertexTasks:   make(map[string][]*VertexTask),
-		vertexLogs:    make(map[string]*ui.Vterm),
-		zoomed:        make(map[string]*zoomState),
+		CreatedAt: time.Now(),
 
 		// default to unbounded screen size so we don't arbitrarily wrap log output
 		// when no size is given
 		Width:  -1,
 		Height: -1,
 
-		ColorProfile: colorProfile,
-
 		// sane default before window size is known
 		ReasonableTermHeight: 10,
+
+		ColorProfile: colorProfile,
+
+		Vertices:      make(map[string]*Vertex),
+		Groups:        make(map[string]*Group),
+		GroupVertices: make(map[string]map[string]struct{}),
+		VertexGroups:  make(map[string]map[string]struct{}),
+		GroupChildren: make(map[string]map[string]struct{}),
+		VertexTasks:   make(map[string][]*VertexTask),
+
+		vertexLogs: make(map[string]*ui.Vterm),
+		zoomed:     make(map[string]*zoomState),
 
 		globalLogs:  logs,
 		globalLogsW: ui.NewOutput(logs, termenv.WithProfile(colorProfile)),
 
 		messageLevel: MessageLevel_WARNING,
-
-		CreatedAt: time.Now(),
 	}
 }
 

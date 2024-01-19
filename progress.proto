@@ -19,8 +19,10 @@ message StatusUpdate {
   repeated VertexMeta metas = 9;
   // Groups contains a set of groups updates.
   repeated Group groups = 4;
-  // Memberships contains a set of membership updates.
+  // Memberships contains a set of group membership updates.
   repeated Membership memberships = 5;
+  // Children contains a set of parent-child vertex updates.
+  repeated Children children = 10;
   // Messages contains global messages to show to the user.
   repeated Message messages = 6;
   // Sent is an optional timestamp that the status update was emitted.
@@ -34,6 +36,14 @@ message Membership {
   // Group is the ID of the group.
   string group = 1;
   // Vertexes is the set of vertex IDs that are members of the group.
+  repeated string vertexes = 2;
+};
+
+// Children declares a set of vertexes to be children of another vertex.
+message Children {
+  // Vertex is the ID of the parent.
+  string vertex = 1;
+  // Vertexes is the set of vertex IDs that are children of the parent.
   repeated string vertexes = 2;
 };
 

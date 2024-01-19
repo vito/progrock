@@ -18,10 +18,16 @@ var Clock = clockwork.NewRealClock()
 type Recorder struct {
 	w Writer
 
+	// Group is the current group, assuming the Recorder was initialized with
+	// one.
 	Group *Group
 
+	// GroupID is either the newly created group's ID, or the group ID passed to
+	// NewGroupedRecorder.
+	Parent *string
+
 	groups  map[string]*Recorder
-	groupsL sync.Mutex
+	groupsL *sync.Mutex
 }
 
 // RootID is "_root", the static ID value set for all Root groups.
@@ -47,11 +53,48 @@ func NewRecorder(w Writer, opts ...GroupOpt) *Recorder {
 	return newEmptyRecorder(w).WithGroup(RootGroup, opts...)
 }
 
+// NewGroupedRecorder returns a new Recorder whose future vertices will be
+// members of the given group, and whose future groups will be children of the
+// given group ID.
+//
+// Note that this only uses the given group ID, and assumes that the group has
+// already been emitted.
+func NewSubRecorder(w Writer, parentID string) *Recorder {
+	rec := newEmptyRecorder(w)
+	rec.Parent = &parentID
+	return rec
+}
+
 func newEmptyRecorder(w Writer) *Recorder {
 	return &Recorder{
-		w:      w,
-		groups: map[string]*Recorder{},
+		w:       w,
+		groups:  map[string]*Recorder{},
+		groupsL: &sync.Mutex{},
 	}
+}
+
+// Clone returns a deep-copy of the recorder.
+func (recorder *Recorder) Clone() *Recorder {
+	recorder.groupsL.Lock()
+	defer recorder.groupsL.Unlock()
+	cp := *recorder
+	cp.Group = proto.Clone(recorder.Group).(*Group)
+	if cp.Parent != nil {
+		cp.Parent = proto.String(*recorder.Parent)
+	}
+	cp.groups = map[string]*Recorder{}
+	for k, v := range recorder.groups {
+		cp.groups[k] = v.Clone()
+	}
+	cp.groupsL = &sync.Mutex{}
+	return &cp
+}
+
+// Parent sets the parent vertex ID to associate with any emitted vertices.
+func (recorder *Recorder) WithParent(parentID string) *Recorder {
+	cp := recorder.Clone()
+	cp.Parent = &parentID
+	return cp
 }
 
 // Record sends a deep-copy of the status update to the Writer.
@@ -206,6 +249,7 @@ func (recorder *Recorder) WithGroup(name string, opts ...GroupOpt) *Recorder {
 
 	subRecorder := newEmptyRecorder(recorder.w)
 	subRecorder.Group = g
+	subRecorder.Parent = recorder.Parent
 	subRecorder.sync()
 
 	recorder.groups[name] = subRecorder
@@ -214,27 +258,38 @@ func (recorder *Recorder) WithGroup(name string, opts ...GroupOpt) *Recorder {
 }
 
 // Join sends a progress update that the given vertexes are members of the
-// current group.
+// current group and/or children of the parent vertex.
 //
-// If the Recorder does not have a group, it does nothing.
+// If the Recorder does not have a group or parent vertex, it does nothing.
 func (recorder *Recorder) Join(vertexes ...digest.Digest) {
 	strs := make([]string, len(vertexes))
 	for i, v := range vertexes {
 		strs[i] = v.String()
 	}
 
-	if recorder.Group == nil {
-		return
-	}
+	update := &StatusUpdate{}
 
-	recorder.Record(&StatusUpdate{
-		Memberships: []*Membership{
+	if recorder.Group != nil {
+		update.Memberships = []*Membership{
 			{
 				Group:    recorder.Group.Id,
 				Vertexes: strs,
 			},
-		},
-	})
+		}
+	}
+
+	if recorder.Parent != nil {
+		update.Children = []*Children{
+			{
+				Vertex:   *recorder.Parent,
+				Vertexes: strs,
+			},
+		}
+	}
+
+	if len(update.Memberships) > 0 || len(update.Children) > 0 {
+		recorder.Record(update)
+	}
 }
 
 // Complete marks any current group and all sub-groups as complete, and sends a

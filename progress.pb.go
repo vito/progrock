@@ -162,8 +162,10 @@ type StatusUpdate struct {
 	Metas []*VertexMeta `protobuf:"bytes,9,rep,name=metas,proto3" json:"metas,omitempty"`
 	// Groups contains a set of groups updates.
 	Groups []*Group `protobuf:"bytes,4,rep,name=groups,proto3" json:"groups,omitempty"`
-	// Memberships contains a set of membership updates.
+	// Memberships contains a set of group membership updates.
 	Memberships []*Membership `protobuf:"bytes,5,rep,name=memberships,proto3" json:"memberships,omitempty"`
+	// Children contains a set of parent-child vertex updates.
+	Children []*Children `protobuf:"bytes,10,rep,name=children,proto3" json:"children,omitempty"`
 	// Messages contains global messages to show to the user.
 	Messages []*Message `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`
 	// Sent is an optional timestamp that the status update was emitted.
@@ -242,6 +244,13 @@ func (x *StatusUpdate) GetGroups() []*Group {
 func (x *StatusUpdate) GetMemberships() []*Membership {
 	if x != nil {
 		return x.Memberships
+	}
+	return nil
+}
+
+func (x *StatusUpdate) GetChildren() []*Children {
+	if x != nil {
+		return x.Children
 	}
 	return nil
 }
@@ -325,6 +334,64 @@ func (x *Membership) GetVertexes() []string {
 	return nil
 }
 
+// Children declares a set of vertexes to be children of another vertex.
+type Children struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Vertex is the ID of the parent.
+	Vertex string `protobuf:"bytes,1,opt,name=vertex,proto3" json:"vertex,omitempty"`
+	// Vertexes is the set of vertex IDs that are children of the parent.
+	Vertexes []string `protobuf:"bytes,2,rep,name=vertexes,proto3" json:"vertexes,omitempty"`
+}
+
+func (x *Children) Reset() {
+	*x = Children{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_progress_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Children) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Children) ProtoMessage() {}
+
+func (x *Children) ProtoReflect() protoreflect.Message {
+	mi := &file_progress_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Children.ProtoReflect.Descriptor instead.
+func (*Children) Descriptor() ([]byte, []int) {
+	return file_progress_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Children) GetVertex() string {
+	if x != nil {
+		return x.Vertex
+	}
+	return ""
+}
+
+func (x *Children) GetVertexes() []string {
+	if x != nil {
+		return x.Vertexes
+	}
+	return nil
+}
+
 // Group is used to group related vertexes.
 type Group struct {
 	state         protoimpl.MessageState
@@ -353,7 +420,7 @@ type Group struct {
 func (x *Group) Reset() {
 	*x = Group{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[2]
+		mi := &file_progress_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -366,7 +433,7 @@ func (x *Group) String() string {
 func (*Group) ProtoMessage() {}
 
 func (x *Group) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[2]
+	mi := &file_progress_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,7 +446,7 @@ func (x *Group) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Group.ProtoReflect.Descriptor instead.
 func (*Group) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{2}
+	return file_progress_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Group) GetId() string {
@@ -449,7 +516,7 @@ type Label struct {
 func (x *Label) Reset() {
 	*x = Label{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[3]
+		mi := &file_progress_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -462,7 +529,7 @@ func (x *Label) String() string {
 func (*Label) ProtoMessage() {}
 
 func (x *Label) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[3]
+	mi := &file_progress_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -475,7 +542,7 @@ func (x *Label) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Label.ProtoReflect.Descriptor instead.
 func (*Label) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{3}
+	return file_progress_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Label) GetName() string {
@@ -540,7 +607,7 @@ type Vertex struct {
 func (x *Vertex) Reset() {
 	*x = Vertex{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[4]
+		mi := &file_progress_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -553,7 +620,7 @@ func (x *Vertex) String() string {
 func (*Vertex) ProtoMessage() {}
 
 func (x *Vertex) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[4]
+	mi := &file_progress_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,7 +633,7 @@ func (x *Vertex) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vertex.ProtoReflect.Descriptor instead.
 func (*Vertex) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{4}
+	return file_progress_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Vertex) GetId() string {
@@ -677,7 +744,7 @@ type VertexTask struct {
 func (x *VertexTask) Reset() {
 	*x = VertexTask{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[5]
+		mi := &file_progress_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -690,7 +757,7 @@ func (x *VertexTask) String() string {
 func (*VertexTask) ProtoMessage() {}
 
 func (x *VertexTask) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[5]
+	mi := &file_progress_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -703,7 +770,7 @@ func (x *VertexTask) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VertexTask.ProtoReflect.Descriptor instead.
 func (*VertexTask) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{5}
+	return file_progress_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *VertexTask) GetVertex() string {
@@ -767,7 +834,7 @@ type VertexLog struct {
 func (x *VertexLog) Reset() {
 	*x = VertexLog{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[6]
+		mi := &file_progress_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -780,7 +847,7 @@ func (x *VertexLog) String() string {
 func (*VertexLog) ProtoMessage() {}
 
 func (x *VertexLog) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[6]
+	mi := &file_progress_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -793,7 +860,7 @@ func (x *VertexLog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VertexLog.ProtoReflect.Descriptor instead.
 func (*VertexLog) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{6}
+	return file_progress_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *VertexLog) GetVertex() string {
@@ -843,7 +910,7 @@ type VertexMeta struct {
 func (x *VertexMeta) Reset() {
 	*x = VertexMeta{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[7]
+		mi := &file_progress_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -856,7 +923,7 @@ func (x *VertexMeta) String() string {
 func (*VertexMeta) ProtoMessage() {}
 
 func (x *VertexMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[7]
+	mi := &file_progress_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -869,7 +936,7 @@ func (x *VertexMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VertexMeta.ProtoReflect.Descriptor instead.
 func (*VertexMeta) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{7}
+	return file_progress_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *VertexMeta) GetVertex() string {
@@ -913,7 +980,7 @@ type Message struct {
 func (x *Message) Reset() {
 	*x = Message{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_progress_proto_msgTypes[8]
+		mi := &file_progress_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -926,7 +993,7 @@ func (x *Message) String() string {
 func (*Message) ProtoMessage() {}
 
 func (x *Message) ProtoReflect() protoreflect.Message {
-	mi := &file_progress_proto_msgTypes[8]
+	mi := &file_progress_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1006,7 @@ func (x *Message) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Message.ProtoReflect.Descriptor instead.
 func (*Message) Descriptor() ([]byte, []int) {
-	return file_progress_proto_rawDescGZIP(), []int{8}
+	return file_progress_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Message) GetMessage() string {
@@ -980,7 +1047,7 @@ var file_progress_proto_rawDesc = []byte{
 	0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x65, 0x6d, 0x70,
 	0x74, 0x79, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x19, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
 	0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x61, 0x6e, 0x79, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x22, 0xd5, 0x03, 0x0a, 0x0c, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x55, 0x70,
+	0x6f, 0x74, 0x6f, 0x22, 0x85, 0x04, 0x0a, 0x0c, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x55, 0x70,
 	0x64, 0x61, 0x74, 0x65, 0x12, 0x2c, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78, 0x65, 0x73,
 	0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x6f, 0x63,
 	0x6b, 0x2e, 0x56, 0x65, 0x72, 0x74, 0x65, 0x78, 0x52, 0x08, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78,
@@ -998,7 +1065,10 @@ var file_progress_proto_rawDesc = []byte{
 	0x6d, 0x65, 0x6d, 0x62, 0x65, 0x72, 0x73, 0x68, 0x69, 0x70, 0x73, 0x18, 0x05, 0x20, 0x03, 0x28,
 	0x0b, 0x32, 0x14, 0x2e, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x6f, 0x63, 0x6b, 0x2e, 0x4d, 0x65, 0x6d,
 	0x62, 0x65, 0x72, 0x73, 0x68, 0x69, 0x70, 0x52, 0x0b, 0x6d, 0x65, 0x6d, 0x62, 0x65, 0x72, 0x73,
-	0x68, 0x69, 0x70, 0x73, 0x12, 0x2d, 0x0a, 0x08, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x73,
+	0x68, 0x69, 0x70, 0x73, 0x12, 0x2e, 0x0a, 0x08, 0x63, 0x68, 0x69, 0x6c, 0x64, 0x72, 0x65, 0x6e,
+	0x18, 0x0a, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x6f, 0x63,
+	0x6b, 0x2e, 0x43, 0x68, 0x69, 0x6c, 0x64, 0x72, 0x65, 0x6e, 0x52, 0x08, 0x63, 0x68, 0x69, 0x6c,
+	0x64, 0x72, 0x65, 0x6e, 0x12, 0x2d, 0x0a, 0x08, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x73,
 	0x18, 0x06, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x11, 0x2e, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x6f, 0x63,
 	0x6b, 0x2e, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x52, 0x08, 0x6d, 0x65, 0x73, 0x73, 0x61,
 	0x67, 0x65, 0x73, 0x12, 0x33, 0x0a, 0x04, 0x73, 0x65, 0x6e, 0x74, 0x18, 0x07, 0x20, 0x01, 0x28,
@@ -1012,6 +1082,10 @@ var file_progress_proto_rawDesc = []byte{
 	0x0a, 0x09, 0x5f, 0x72, 0x65, 0x63, 0x65, 0x69, 0x76, 0x65, 0x64, 0x22, 0x3e, 0x0a, 0x0a, 0x4d,
 	0x65, 0x6d, 0x62, 0x65, 0x72, 0x73, 0x68, 0x69, 0x70, 0x12, 0x14, 0x0a, 0x05, 0x67, 0x72, 0x6f,
 	0x75, 0x70, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x12,
+	0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78, 0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28,
+	0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78, 0x65, 0x73, 0x22, 0x3e, 0x0a, 0x08, 0x43,
+	0x68, 0x69, 0x6c, 0x64, 0x72, 0x65, 0x6e, 0x12, 0x16, 0x0a, 0x06, 0x76, 0x65, 0x72, 0x74, 0x65,
+	0x78, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78, 0x12,
 	0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78, 0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28,
 	0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x74, 0x65, 0x78, 0x65, 0x73, 0x22, 0x93, 0x02, 0x0a, 0x05,
 	0x47, 0x72, 0x6f, 0x75, 0x70, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
@@ -1134,52 +1208,54 @@ func file_progress_proto_rawDescGZIP() []byte {
 }
 
 var file_progress_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_progress_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_progress_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_progress_proto_goTypes = []interface{}{
 	(LogStream)(0),                // 0: progrock.LogStream
 	(MessageLevel)(0),             // 1: progrock.MessageLevel
 	(*StatusUpdate)(nil),          // 2: progrock.StatusUpdate
 	(*Membership)(nil),            // 3: progrock.Membership
-	(*Group)(nil),                 // 4: progrock.Group
-	(*Label)(nil),                 // 5: progrock.Label
-	(*Vertex)(nil),                // 6: progrock.Vertex
-	(*VertexTask)(nil),            // 7: progrock.VertexTask
-	(*VertexLog)(nil),             // 8: progrock.VertexLog
-	(*VertexMeta)(nil),            // 9: progrock.VertexMeta
-	(*Message)(nil),               // 10: progrock.Message
-	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
-	(*anypb.Any)(nil),             // 12: google.protobuf.Any
-	(*emptypb.Empty)(nil),         // 13: google.protobuf.Empty
+	(*Children)(nil),              // 4: progrock.Children
+	(*Group)(nil),                 // 5: progrock.Group
+	(*Label)(nil),                 // 6: progrock.Label
+	(*Vertex)(nil),                // 7: progrock.Vertex
+	(*VertexTask)(nil),            // 8: progrock.VertexTask
+	(*VertexLog)(nil),             // 9: progrock.VertexLog
+	(*VertexMeta)(nil),            // 10: progrock.VertexMeta
+	(*Message)(nil),               // 11: progrock.Message
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(*anypb.Any)(nil),             // 13: google.protobuf.Any
+	(*emptypb.Empty)(nil),         // 14: google.protobuf.Empty
 }
 var file_progress_proto_depIdxs = []int32{
-	6,  // 0: progrock.StatusUpdate.vertexes:type_name -> progrock.Vertex
-	7,  // 1: progrock.StatusUpdate.tasks:type_name -> progrock.VertexTask
-	8,  // 2: progrock.StatusUpdate.logs:type_name -> progrock.VertexLog
-	9,  // 3: progrock.StatusUpdate.metas:type_name -> progrock.VertexMeta
-	4,  // 4: progrock.StatusUpdate.groups:type_name -> progrock.Group
+	7,  // 0: progrock.StatusUpdate.vertexes:type_name -> progrock.Vertex
+	8,  // 1: progrock.StatusUpdate.tasks:type_name -> progrock.VertexTask
+	9,  // 2: progrock.StatusUpdate.logs:type_name -> progrock.VertexLog
+	10, // 3: progrock.StatusUpdate.metas:type_name -> progrock.VertexMeta
+	5,  // 4: progrock.StatusUpdate.groups:type_name -> progrock.Group
 	3,  // 5: progrock.StatusUpdate.memberships:type_name -> progrock.Membership
-	10, // 6: progrock.StatusUpdate.messages:type_name -> progrock.Message
-	11, // 7: progrock.StatusUpdate.sent:type_name -> google.protobuf.Timestamp
-	11, // 8: progrock.StatusUpdate.received:type_name -> google.protobuf.Timestamp
-	5,  // 9: progrock.Group.labels:type_name -> progrock.Label
-	11, // 10: progrock.Group.started:type_name -> google.protobuf.Timestamp
-	11, // 11: progrock.Group.completed:type_name -> google.protobuf.Timestamp
-	11, // 12: progrock.Vertex.started:type_name -> google.protobuf.Timestamp
-	11, // 13: progrock.Vertex.completed:type_name -> google.protobuf.Timestamp
-	11, // 14: progrock.VertexTask.started:type_name -> google.protobuf.Timestamp
-	11, // 15: progrock.VertexTask.completed:type_name -> google.protobuf.Timestamp
-	0,  // 16: progrock.VertexLog.stream:type_name -> progrock.LogStream
-	11, // 17: progrock.VertexLog.timestamp:type_name -> google.protobuf.Timestamp
-	12, // 18: progrock.VertexMeta.data:type_name -> google.protobuf.Any
-	1,  // 19: progrock.Message.level:type_name -> progrock.MessageLevel
-	5,  // 20: progrock.Message.labels:type_name -> progrock.Label
-	2,  // 21: progrock.ProgressService.WriteUpdates:input_type -> progrock.StatusUpdate
-	13, // 22: progrock.ProgressService.WriteUpdates:output_type -> google.protobuf.Empty
-	22, // [22:23] is the sub-list for method output_type
-	21, // [21:22] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	4,  // 6: progrock.StatusUpdate.children:type_name -> progrock.Children
+	11, // 7: progrock.StatusUpdate.messages:type_name -> progrock.Message
+	12, // 8: progrock.StatusUpdate.sent:type_name -> google.protobuf.Timestamp
+	12, // 9: progrock.StatusUpdate.received:type_name -> google.protobuf.Timestamp
+	6,  // 10: progrock.Group.labels:type_name -> progrock.Label
+	12, // 11: progrock.Group.started:type_name -> google.protobuf.Timestamp
+	12, // 12: progrock.Group.completed:type_name -> google.protobuf.Timestamp
+	12, // 13: progrock.Vertex.started:type_name -> google.protobuf.Timestamp
+	12, // 14: progrock.Vertex.completed:type_name -> google.protobuf.Timestamp
+	12, // 15: progrock.VertexTask.started:type_name -> google.protobuf.Timestamp
+	12, // 16: progrock.VertexTask.completed:type_name -> google.protobuf.Timestamp
+	0,  // 17: progrock.VertexLog.stream:type_name -> progrock.LogStream
+	12, // 18: progrock.VertexLog.timestamp:type_name -> google.protobuf.Timestamp
+	13, // 19: progrock.VertexMeta.data:type_name -> google.protobuf.Any
+	1,  // 20: progrock.Message.level:type_name -> progrock.MessageLevel
+	6,  // 21: progrock.Message.labels:type_name -> progrock.Label
+	2,  // 22: progrock.ProgressService.WriteUpdates:input_type -> progrock.StatusUpdate
+	14, // 23: progrock.ProgressService.WriteUpdates:output_type -> google.protobuf.Empty
+	23, // [23:24] is the sub-list for method output_type
+	22, // [22:23] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_progress_proto_init() }
@@ -1213,7 +1289,7 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Group); i {
+			switch v := v.(*Children); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1225,7 +1301,7 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Label); i {
+			switch v := v.(*Group); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1237,7 +1313,7 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Vertex); i {
+			switch v := v.(*Label); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1249,7 +1325,7 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VertexTask); i {
+			switch v := v.(*Vertex); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1261,7 +1337,7 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VertexLog); i {
+			switch v := v.(*VertexTask); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1273,7 +1349,7 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VertexMeta); i {
+			switch v := v.(*VertexLog); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1285,6 +1361,18 @@ func file_progress_proto_init() {
 			}
 		}
 		file_progress_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*VertexMeta); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_progress_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Message); i {
 			case 0:
 				return &v.state
@@ -1298,18 +1386,18 @@ func file_progress_proto_init() {
 		}
 	}
 	file_progress_proto_msgTypes[0].OneofWrappers = []interface{}{}
-	file_progress_proto_msgTypes[2].OneofWrappers = []interface{}{}
-	file_progress_proto_msgTypes[4].OneofWrappers = []interface{}{}
+	file_progress_proto_msgTypes[3].OneofWrappers = []interface{}{}
 	file_progress_proto_msgTypes[5].OneofWrappers = []interface{}{}
-	file_progress_proto_msgTypes[7].OneofWrappers = []interface{}{}
+	file_progress_proto_msgTypes[6].OneofWrappers = []interface{}{}
 	file_progress_proto_msgTypes[8].OneofWrappers = []interface{}{}
+	file_progress_proto_msgTypes[9].OneofWrappers = []interface{}{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_progress_proto_rawDesc,
 			NumEnums:      2,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
