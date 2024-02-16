@@ -176,9 +176,9 @@ type GroupOpt interface {
 	ConfigureGroup(*Group)
 }
 
-type groupOptFunc func(*Group)
+type GroupOptFunc func(*Group)
 
-func (f groupOptFunc) ConfigureGroup(g *Group) {
+func (f GroupOptFunc) ConfigureGroup(g *Group) {
 	f(g)
 }
 
@@ -190,10 +190,10 @@ type GroupVertexOpt struct {
 // WithLabels sets labels on the group or vertex.
 func WithLabels(labels ...*Label) GroupVertexOpt {
 	return GroupVertexOpt{
-		GroupOpt: groupOptFunc(func(g *Group) {
+		GroupOpt: GroupOptFunc(func(g *Group) {
 			g.Labels = append(g.Labels, labels...)
 		}),
-		VertexOpt: vertexOptFunc(func(v *Vertex) {
+		VertexOpt: VertexOptFunc(func(v *Vertex) {
 			v.Labels = append(v.Labels, labels...)
 		}),
 	}
@@ -204,14 +204,14 @@ func WithLabels(labels ...*Label) GroupVertexOpt {
 // to a single API (e.g. a Dockerfile build), as opposed to "strong" groups
 // explicitly configured by the user (e.g. "test", "build", etc).
 func Weak() GroupOpt {
-	return groupOptFunc(func(g *Group) {
+	return GroupOptFunc(func(g *Group) {
 		g.Weak = true
 	})
 }
 
 // WithStarted sets the start time of the group.
 func WithStarted(started time.Time) GroupOpt {
-	return groupOptFunc(func(g *Group) {
+	return GroupOptFunc(func(g *Group) {
 		g.Started = timestamppb.New(started)
 	})
 }
@@ -220,7 +220,7 @@ func WithStarted(started time.Time) GroupOpt {
 // not specified, the ID defaults to the group's name with the group's start
 // time appended.
 func WithGroupID(id string) GroupOpt {
-	return groupOptFunc(func(g *Group) {
+	return GroupOptFunc(func(g *Group) {
 		g.Id = id
 	})
 }
