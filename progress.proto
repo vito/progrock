@@ -118,6 +118,8 @@ message Vertex {
   // be used for running an interactive shell, or running
   // anything where there is a single primary output.
   bool zoomed = 12;
+  // Labels contains a series of name/value pairs.
+  repeated Label labels = 13;
 }
 
 // VertexTask is a task that a vertex is performing.

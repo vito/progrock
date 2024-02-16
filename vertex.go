@@ -20,24 +20,32 @@ type VertexRecorder struct {
 	Recorder *Recorder
 }
 
+type vertexOptFunc func(*Vertex)
+
+func (f vertexOptFunc) ConfigureVertex(g *Vertex) {
+	f(g)
+}
+
 // VertexOpt is an option for creating a Vertex.
-type VertexOpt func(*Vertex)
+type VertexOpt interface {
+	ConfigureVertex(*Vertex)
+}
 
 // WithInputs sets the inputs for the vertex.
 func WithInputs(inputs ...digest.Digest) VertexOpt {
-	return func(vertex *Vertex) {
+	return vertexOptFunc(func(vertex *Vertex) {
 		for _, input := range inputs {
 			vertex.Inputs = append(vertex.Inputs, input.String())
 		}
-	}
+	})
 }
 
 // Internal marks the vertex as internal, meaning it will not be included in
 // progress output by default.
 func Internal() VertexOpt {
-	return func(vertex *Vertex) {
+	return vertexOptFunc(func(vertex *Vertex) {
 		vertex.Internal = true
-	}
+	})
 }
 
 // TermSetupFunc is a function that gets called when the vertex's zoomed pane
@@ -63,20 +71,20 @@ func setupTerm(vId string, vt *midterm.Terminal) io.Writer {
 // Zoomed marks the vertex as zoomed, indicating it should take up as much
 // screen space as possible.
 func Zoomed(setup TermSetupFunc) VertexOpt {
-	return func(vertex *Vertex) {
+	return vertexOptFunc(func(vertex *Vertex) {
 		termSetupsL.Lock()
 		termSetups[vertex.Id] = setup
 		termSetupsL.Unlock()
 		vertex.Zoomed = true
-	}
+	})
 }
 
 // Focused marks the vertex as focused, indicating it should be shown in the UI
 // when in focus mode.
 func Focused() VertexOpt {
-	return func(vertex *Vertex) {
+	return vertexOptFunc(func(vertex *Vertex) {
 		vertex.Focused = true
-	}
+	})
 }
 
 // Vertex creates a new VertexRecorder for the given vertex.
@@ -97,7 +105,7 @@ func (recorder *Recorder) Vertex(dig digest.Digest, name string, opts ...VertexO
 	}
 
 	for _, o := range opts {
-		o(vtx)
+		o.ConfigureVertex(vtx)
 	}
 
 	rec := &VertexRecorder{

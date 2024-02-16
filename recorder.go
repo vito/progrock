@@ -172,12 +172,30 @@ func (recorder *Recorder) message(msg string, opts ...MessageOpt) {
 }
 
 // GroupOpt is an option for creating a Group.
-type GroupOpt func(*Group)
+type GroupOpt interface {
+	ConfigureGroup(*Group)
+}
 
-// WithLabels sets labels on the group.
-func WithLabels(labels ...*Label) GroupOpt {
-	return func(g *Group) {
-		g.Labels = append(g.Labels, labels...)
+type groupOptFunc func(*Group)
+
+func (f groupOptFunc) ConfigureGroup(g *Group) {
+	f(g)
+}
+
+type GroupVertexOpt struct {
+	GroupOpt
+	VertexOpt
+}
+
+// WithLabels sets labels on the group or vertex.
+func WithLabels(labels ...*Label) GroupVertexOpt {
+	return GroupVertexOpt{
+		GroupOpt: groupOptFunc(func(g *Group) {
+			g.Labels = append(g.Labels, labels...)
+		}),
+		VertexOpt: vertexOptFunc(func(v *Vertex) {
+			v.Labels = append(v.Labels, labels...)
+		}),
 	}
 }
 
@@ -186,25 +204,25 @@ func WithLabels(labels ...*Label) GroupOpt {
 // to a single API (e.g. a Dockerfile build), as opposed to "strong" groups
 // explicitly configured by the user (e.g. "test", "build", etc).
 func Weak() GroupOpt {
-	return func(g *Group) {
+	return groupOptFunc(func(g *Group) {
 		g.Weak = true
-	}
+	})
 }
 
 // WithStarted sets the start time of the group.
 func WithStarted(started time.Time) GroupOpt {
-	return func(g *Group) {
+	return groupOptFunc(func(g *Group) {
 		g.Started = timestamppb.New(started)
-	}
+	})
 }
 
 // WithGroupID sets the ID for the group. An ID should be globally unique. If
 // not specified, the ID defaults to the group's name with the group's start
 // time appended.
 func WithGroupID(id string) GroupOpt {
-	return func(g *Group) {
+	return groupOptFunc(func(g *Group) {
 		g.Id = id
-	}
+	})
 }
 
 // WithGroup creates a new group and sends a progress update.
@@ -226,7 +244,7 @@ func (recorder *Recorder) WithGroup(name string, opts ...GroupOpt) *Recorder {
 	}
 
 	for _, o := range opts {
-		o(g)
+		o.ConfigureGroup(g)
 	}
 
 	if g.Started == nil {
