@@ -14,6 +14,15 @@ type VertexInstance struct {
 	GroupId  string
 }
 
+func (v *Vertex) Label(name string) string {
+	for _, label := range v.Labels {
+		if label.Name == name {
+			return label.Value
+		}
+	}
+	return ""
+}
+
 func (v *Vertex) HasInput(o *Vertex) bool {
 	for _, oid := range o.Outputs {
 		if oid == v.Id {
