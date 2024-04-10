@@ -17,6 +17,7 @@ import (
 func NewOutput(w io.Writer, opts ...termenv.OutputOption) *termenv.Output {
 	return termenv.NewOutput(w, append([]termenv.OutputOption{
 		termenv.WithProfile(ColorProfile()),
+		termenv.WithTTY(true),
 	}, opts...)...)
 }
 
